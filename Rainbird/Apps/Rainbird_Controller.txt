@@ -1,0 +1,46 @@
+import groovy.time.TimeCategory
+import java.text.SimpleDateFormat
+
+def setVersion(){
+    state.name = "Rainbird"
+	state.version = "1.0.0"
+}
+
+definition(
+    name:"Rainbird Controller",
+    namespace: "mygithubusername",
+    author: "Jean Bilodeau",
+    description: "Refresh the status of Rainbird controller",
+    category: "Convenience",
+    iconUrl: "",
+    iconX2Url: "",
+    iconX3Url: "",
+	importUrl: ""
+    )
+
+preferences {
+    section() {
+		input "MyRainbird", "capability.switch"
+    }
+}
+
+def installed() {
+    log.debug "Installed with settings: ${settings}"
+    initialize()
+}
+
+def updated() {
+    log.debug "Updated with settings: ${settings}"
+    unsubscribe()
+    initialize()
+}
+
+def initialize() {
+	subscribe(MyRainbird, "switch.on", handlerMethod)
+    subscribe("location", "systemStart", initialize)
+    }
+
+def handlerMethod(evt) {
+    log.debug "event name: ${evt.name}"
+    log.debug "event value: ${evt.value}"
+}	
