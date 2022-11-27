@@ -1,0 +1,16 @@
+{
+  "author": "Jean Bilodeau",
+  "gitHubUrl": "https://github.com/jbilodea/Hubitat",
+  "packages": [
+    {
+      "id": "708fc3a2-bca5-4c6d-a5e0-7f4bd41e3d7e",
+      "name": "Canadian Hyundai Bluelink",
+      "category": "Integrations",
+      "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/packageManifest.json",
+      "description": "This is the package to use the Canadian Hyundai Bluelink facility with Hubitat",
+      "tags": [
+        "Vehicles & Transportation"
+      ]
+    }
+  ]
+}
