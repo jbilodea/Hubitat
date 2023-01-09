@@ -17,13 +17,14 @@
  *
  *  History:
  *  8/29/22 - Initial work.
- *
+ *  11/27/22 - Initial Canadian only version
+ *  01/09/23 - Add command ForceRefresh to refresh the data bypassing the cache*
  */
 
-String appVersion()   { return "1.0.0" }
+String appVersion()   { return "1.1.0" }
 def setVersion(){
     state.name = "Hyundai Bluelink Driver"
-    state.version = "1.0.0"
+    state.version = "1.1.0"
 }
 
 metadata {
