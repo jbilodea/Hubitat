@@ -485,7 +485,7 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh = fa
 
 void getForceVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh = false, Boolean retry=false)
 {
-    log("getVehicleStatus() called", "trace")
+    log("getForceVehicleStatus() called", "trace")
 
     if( !stay_logged_in ) {
         authorize()
