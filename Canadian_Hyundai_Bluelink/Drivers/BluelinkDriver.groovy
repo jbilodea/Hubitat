@@ -90,6 +90,7 @@ metadata {
                 command "ClimManual", [[name: "Temperature", type:"ENUM", description: "Climate Temperature", constraints: [17,17.5,18,18.5,19,19.5,20,20.5,21,21.5,22,22.5,23,23.5,24,24.5,25,25.5,26,26.5,27]],[name: "Front Defrost", type:"ENUM", description: "Front Defrost", constraints: [false,true]],[name: "Heating", type:"ENUM", description: "Rear Defrost/Steering", constraints: [false, true]]]
                 command "StartCharge"
                 command "StopCharge"
+                command "ForceRefresh"
             }
 
     preferences {
@@ -140,6 +141,13 @@ void refresh()
 {
     log("refresh called", "trace")
     parent.getVehicleStatus(device, fullRefresh, false)
+    updateHtml()
+}
+
+void ForceRefresh()
+{
+    log("Forcerefresh called", "trace")
+    parent.getForceVehicleStatus(device, fullRefresh, false)
     updateHtml()
 }
 
