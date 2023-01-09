@@ -1,6 +1,6 @@
 {
   "packageName": "Canadian Hyundai Bluelink",
-  "releaseNotes": "v 1.1  Add command ForceRefresh too bypass the cache and read the car data"
+  "releaseNotes": "v 1.1  Add command ForceRefresh too bypass the cache and read the car data",
   "author": "Jean Bilodeau",
   "version": "1.1",
   "minimumHEVersion": "0.0",
