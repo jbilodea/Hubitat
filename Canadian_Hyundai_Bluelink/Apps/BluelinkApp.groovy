@@ -17,6 +17,8 @@
  *
  *  History:
  *  8/29/22 - Initial work.
+ *  11/27/22 - Initial Canadian only version
+ *  01/09/23 - Add command ForceRefresh to refresh the data bypassing the cache
  *
  *  Note:  FavDefrost is for Front Windshield Defrost
  *         FavHeating is for Heated features like the steering wheel and rear window
@@ -32,10 +34,10 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import groovy.transform.Field
 
-static String appVersion()   { return "1.0.0" }
+static String appVersion()   { return "1.1.0" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
-    state.version = "1.0.0"
+    state.version = "1.1.0"
     state.transactionId = ""
 }
 
@@ -480,6 +482,69 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh = fa
         getChargeLimits(device)
         ClimFavoritesDisplay(device)
 }
+
+void getForceVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh = false, Boolean retry=false)
+{
+    log("getVehicleStatus() called", "trace")
+
+    if( !stay_logged_in ) {
+        authorize()
+    }
+
+    //Note: this API can take up to a minute tor return if REFRESH=true because it contacts the car's modem and
+    //doesn't use cached info.
+    def uri = API_URL + "rltmvhclsts"
+    API_Headers.referer = "https://mybluelink.ca/cpw/overview"
+    def headers = API_Headers
+    headers.put('accessToken', state.access_token)
+    headers.put('vehicleId', state.vehicleId)
+    headers.put('offset', '-5')
+    headers.put('REFRESH', refresh.toString())
+    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    def params = [ uri: uri, headers: headers, timeout: valTimeout ]
+    log("getVehicleStatus params ${params}", "debug")
+
+    //add error checking
+    LinkedHashMap  reJson = []
+    try
+    {
+        httpPost(params) { response ->
+            def reCode = response.getStatus()
+            reJson = response.getData()
+            log("reCode: ${reCode}", "debug")
+            log("reJson: ${reJson}", "debug")
+        }
+
+        // Update relevant device attributes
+        sendEvent(device, [name: 'Engine', value: reJson.result.status.engine ? 'On' : 'Off'])
+        sendEvent(device, [name: 'DoorLocks', value: reJson.result.status.doorLock ? 'Locked' : 'Unlocked'])
+        sendEvent(device, [name: 'Trunk', value: reJson.result.status.trunkOpen ? 'Open' : 'Closed'])
+        sendEvent(device, [name: "LastRefreshTime", value: Date.parse('yyyyMMddHHmmSS', reJson.result.status.lastStatusDate).format('E MMM dd HH:mm:ss z yyyy')])
+// JBJB temporary
+        sendEvent(device, [name: 'BatteryInCharge', value: reJson.result.status.evStatus.batteryCharge ? 'On' : 'Off'])
+        sendEvent(device, [name: 'BatteryPercent', value: reJson.result.status.evStatus.batteryStatus])
+        def mins = reJson.result.status.evStatus.remainTime2.etc3.value
+        int hours = mins / 60
+        int minutes = mins % 60
+        def timeToDisplay = String.format("%02d:%02d", hours, minutes)
+        sendEvent(device, [name: 'BatteryTimeToCharge', value: timeToDisplay])
+
+    }
+    catch (groovyx.net.http.HttpResponseException e)
+    {
+        if (e.getStatusCode() == 401 && !retry)
+        {
+            log('Authorization token expired, will refresh and retry.', 'warn')
+            refreshToken()          
+            getVehicleStatus(device, refresh, true)
+        }
+        log("getVehicleStatus failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
+    }
+        getNextService(device)
+        getChargeLimits(device)
+        ClimFavoritesDisplay(device)
+}
+
 
 void getNextService(com.hubitat.app.DeviceWrapper device)
 {
