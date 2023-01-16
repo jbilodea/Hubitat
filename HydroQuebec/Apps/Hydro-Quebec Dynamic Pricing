@@ -210,10 +210,11 @@ def updated() {
 def initialize() {
     logger("debug", "initialize ${app.label}")
 
-    if(pauseApp) {
-        unschedule()
-    }
-    else {
+    unschedule()    
+//    if(pauseApp) {
+//        unschedule()
+//    }
+//    else {
         // Subscribe to Hub restarts so we can make sure events are dealt with correctly
         subscribe(location, "systemStart", hubRestartHandler)
 
@@ -223,7 +224,7 @@ def initialize() {
             startPolling()
         }
         schedule("59 29 12 ? * * *", startPolling, [overwrite: true])
-    }
+//    }
 }
 
 
@@ -281,15 +282,13 @@ def hubRestartHandler(evt) {
 def startPolling() {
     logger("trace", "startPolling")
 
-    if (!eventPollEnableSwitch?.currentValue("switch") || eventPollEnableSwitch.currentValue("switch") == "on")
-        if (testApp)
-            poll()
-        else {
-            poll()
-            runEvery1Hour(poll)        
+    if (!eventPollEnableSwitch?.currentValue("switch") || eventPollEnableSwitch.currentValue("switch") == "on") {
+        poll()
+        if (!testApp) {
+            runEvery15Minutes(poll)        
         }
+    }
 }
-
 
 //************************************************************
 // poll
@@ -383,7 +382,7 @@ def handleHQEvents() {
     def currDate = new Date()
 
     //Check to see if we are within the period set by power company
-    if (timeOfDayIsBetween(startWinterPeriod, endWinterPeriod, currDate)) {
+    if (response.data.info.dateDebutPeriodeHiver && response.data.info.dateFinPeriodeHiver && (timeOfDayIsBetween(startWinterPeriod, endWinterPeriod, currDate))) {
         logger("debug", "We are within the Winter Period, continue...")
         
         //Are there new events
@@ -431,7 +430,7 @@ def handleHQEvents() {
                     newEventsPush = newEventsPush + "$eventStartHour:$eventStartMinute:$eventStartSecond to $eventEndHour:$eventEndMinute:$eventEndSecond"
                     myDeviceNewEvent.speak(eventDetectedTextAM)
         
-                    if (morningHoursIncr && morningTempIncr && morningHoursIncr.length == 5) {
+                    if (morningHoursIncr && morningTempIncr && morningHoursIncr.substring(2,2) == ":") {
 						incrHr = morningHoursIncr.substring(0,1)
 						incrMin = morningHoursIncr.substring(3,4)
 
@@ -453,7 +452,6 @@ def handleHQEvents() {
                         else {
                             morningHrIncr = 0
                         }
-                        
                         schedule("$eventStartSecond $morningMinIncr $morningHrIncr $eventDay $eventMonth ? $eventYear", setHouseBeforeMorning, [overwrite: false])
                     }
                 } 
@@ -463,7 +461,7 @@ def handleHQEvents() {
                     newEventsPush = newEventsPush + "$eventStartHour:$eventStartMinute:$eventStartSecond to $eventEndHour:$eventEndMinute:$eventEndSecond"
                     myDeviceNewEvent.speak(eventDetectedTextPM)
 
-                    if (eveningHoursIncr && eveningTempIncr && eveningHoursIncr.length == 5) {
+                    if (eveningHoursIncr && eveningTempIncr && eveningHoursIncr.substring(2,2) == ":") {
 						incrHr = eveningHoursIncr.substring(0,2)
 						incrMin = eveningHoursIncr.substring(3,5)
 
@@ -484,7 +482,6 @@ def handleHQEvents() {
                         else {
                             eveningHrIncr = 0
                         }
-                        
                         schedule("$eventStartSecond $eveningMinIncr $eveningHrIncr $eventDay $eventMonth ? $eventYear", setHouseBeforeEvening, [overwrite: false])
                     }
                 }
