@@ -416,10 +416,10 @@ def handleHQEvents() {
                 eventEndSecond = eventEndTime[2] 
                 eventStartHourNum = 0
                 eventStartMinuteNum = 0
-                // To start the event 1 minute earlier
-                if (eventStartTime[1].toInteger() < 1) {  //Minutes
-                    if (eventStartTime[0].toInteger() > 1) {   //Hours
-                        eventStartMinuteNum = eventStartTime[1].toInteger() + 60 - 1
+                // To start the event 2 minute2 earlier
+                if (eventStartTime[1].toInteger() < 2) {  //Minutes
+                    if (eventStartTime[0].toInteger() >= 1) {   //Hours
+                        eventStartMinuteNum = eventStartTime[1].toInteger() + 60 - 2
                         eventStartHourNum = eventStartTime[0].toInteger() - 1
                     }
                     else {
@@ -428,7 +428,7 @@ def handleHQEvents() {
                     }
                 }
                  else {
-                     eventStartMinuteNum = eventStartTime[1].toInteger() - 1
+                     eventStartMinuteNum = eventStartTime[1].toInteger() - 2
                      eventStartHourNum = eventStartTime[0].toInteger()
                  }
                  eventStartHour = eventStartHourNum.toString().padLeft(2, "0")
@@ -543,8 +543,14 @@ def setHouseBeforeMorning() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") + morningTempIncr.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(2000)
+        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            thermostat.setHeatingSetpoint(newSetpoint)
+            pauseExecution(3000)
+            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(2000)
+            }
+        }
     }
 }
 
@@ -575,8 +581,14 @@ def setHouseBeforeEvening() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") + eveningTempIncr.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(2000)
+        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            thermostat.setHeatingSetpoint(newSetpoint)
+            pauseExecution(3000)
+            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(2000)
+            }
+        }
     }
 }
 
@@ -641,8 +653,14 @@ def setHouseInMorningEventMode() {
             newSetpoint = thermostat.currentValue("heatingSetpoint") - morningTempIncr.toInteger()
             thermostat.setHeatingSetpoint(newSetpoint)
             pauseExecution(2000)
-            thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(2000)
+            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(3000)
+                if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                    thermostat.setHeatingSetpoint(newSetpoint)
+                    pauseExecution(2000)
+                }
+            }
         }
     }
     
@@ -651,8 +669,14 @@ def setHouseInMorningEventMode() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") - eventEveningDegrees.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(2000)
+        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            thermostat.setHeatingSetpoint(newSetpoint)
+            pauseExecution(3000)
+            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(2000)
+            }
+        }
     }
     
     state.previousSettings = previousSettings
@@ -723,8 +747,14 @@ def setHouseInEveningEventMode() {
             newSetpoint = thermostat.currentValue("heatingSetpoint") - eveningTempIncr.toInteger()
             thermostat.setHeatingSetpoint(newSetpoint)
             pauseExecution(2000)
-            thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(2000)
+            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(3000)
+                if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                    thermostat.setHeatingSetpoint(newSetpoint)
+                    pauseExecution(2000)
+                }
+            }
         }
     }
 
@@ -733,8 +763,14 @@ def setHouseInEveningEventMode() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") - eventEveningDegrees.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(2000)
+        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            thermostat.setHeatingSetpoint(newSetpoint)
+            pauseExecution(3000)
+            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(2000)
+            }
+        }
     }
 
     state.previousSettings = previousSettings
@@ -805,9 +841,14 @@ def setHouseInMorningNormalMode() {
             thermostat.setHeatingSetpoint(thermostatTemp)
             logger("debug", "$thermostat heating setpoint set to $thermostatTemp")
             pauseExecution(2000)
-            thermostat.setHeatingSetpoint(thermostatTemp)
-            pauseExecution(2000)
-            thermostat.setHeatingSetpoint(thermostatTemp)
+            if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(3000)
+                if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                    thermostat.setHeatingSetpoint(newSetpoint)
+                    pauseExecution(2000)
+                }
+            }
         }
     }
     
@@ -875,8 +916,14 @@ def setHouseInEveningNormalMode() {
             thermostat.setHeatingSetpoint(thermostatTemp)
             logger("debug", "$thermostat heating setpoint set to $thermostatTemp")
             pauseExecution(2000)
-            thermostat.setHeatingSetpoint(thermostatTemp)
-            pauseExecution(2000)
+            if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                thermostat.setHeatingSetpoint(newSetpoint)
+                pauseExecution(3000)
+                if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                    thermostat.setHeatingSetpoint(newSetpoint)
+                    pauseExecution(2000)
+                }
+            }
         }
     }
 
