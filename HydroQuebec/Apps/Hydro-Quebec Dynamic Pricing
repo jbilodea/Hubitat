@@ -29,7 +29,7 @@ def setVersion(){
     state.name = "Hydro-Quebec Dynamic Pricing"
     state.version = "0.2.0"
     state.apiUrl = "https://api.didshwa.com/v3/HydroEventCritique"
-    state.apiData = null    
+//    state.apiData = null    
 }
 
 
