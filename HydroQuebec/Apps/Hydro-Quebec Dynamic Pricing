@@ -29,7 +29,6 @@ def setVersion(){
     state.name = "Hydro-Quebec Dynamic Pricing"
     state.version = "0.2.0"
     state.apiUrl = "https://api.didshwa.com/v3/HydroEventCritique"
-//    state.apiData = null    
 }
 
 
@@ -74,6 +73,15 @@ def pageConfig() {
                 if(app.label) {
                     app.updateLabel(app.label - " (Paused)")
                 }
+            }
+            input "pollEvery15Mins", "bool", title: "Start Polling every 15 minutes", defaultValue:false, submitOnChange:true
+            if(pollEvery15Mins) {
+                unschedule(poll)
+//                poll()
+                runEvery15Minutes(poll)
+            }
+            else {
+                unschedule(poll)
             }
             input "testApp", "bool", title: "Test App", defaultValue:false, submitOnChange:true
             if (testApp) {
@@ -286,6 +294,7 @@ def startPolling() {
     if (!eventPollEnableSwitch?.currentValue("switch") || eventPollEnableSwitch.currentValue("switch") == "on") {
         poll()
         if (!testApp) {
+            unschedule(poll)
             runEvery15Minutes(poll)        
         }
     }
@@ -331,7 +340,7 @@ def pollHandler(resp, data) {
 	logger("trace", "pollHandler")
     if(resp.getStatus() == 200 || resp.getStatus() == 207) {
         logger("debug", "Poll Api Successful")
-        
+        resp = parseJson(resp.data)    
         if (state.apiData == resp.data && !testApp) {
             logger("debug", "API data has not changed, nothing to do")
             
@@ -373,24 +382,24 @@ def pollHandler(resp, data) {
 def handleHQEvents() {
     logger("trace", "HandleHQEvents")
 
-    response = parseJson(state.apiData)    
+    response = state.apiData
    
     if (testApp && testDate && testStartTime && testEndTime)
-        response.data.tomorrow = [["date":testDate,"heureDebut":testStartTime,"heureFin":testEndTime]]
+        response.tomorrow = [["date":testDate,"heureDebut":testStartTime,"heureFin":testEndTime]]
     
-    def startWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", response.data.info.dateDebutPeriodeHiver.replace(".000+0000",""))
-    def endWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", response.data.info.dateFinPeriodeHiver.replace(".000+0000",""))
+    def startWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", response.info.dateDebutPeriodeHiver.replace(".000+0000",""))
+    def endWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", response.info.dateFinPeriodeHiver.replace(".000+0000",""))
     def currDate = new Date()
 
     //Check to see if we are within the period set by power company
-    if (response.data.info.dateDebutPeriodeHiver && response.data.info.dateFinPeriodeHiver && (timeOfDayIsBetween(startWinterPeriod, endWinterPeriod, currDate))) {
+    if (response.info.dateDebutPeriodeHiver && response.info.dateFinPeriodeHiver && (timeOfDayIsBetween(startWinterPeriod, endWinterPeriod, currDate))) {
         logger("debug", "We are within the Winter Period, continue...")
         
         //Are there new events
-        if (response.data.tomorrow) {
+        if (response.tomorrow) {
             newEventsPush = ""
             
-            for(eventInfo in response.data.tomorrow) {
+            for(eventInfo in response.tomorrow) {
                 
                 //Let's parse event info so we can schedule it, send info to logs or even to a device
                 eventStartPeriodISO = "$eventInfo.date" + "T" + "$eventInfo.heureDebut"
