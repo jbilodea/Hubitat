@@ -29,6 +29,7 @@ def setVersion(){
     state.name = "Hydro-Quebec Dynamic Pricing"
     state.version = "0.2.0"
     state.apiUrl = "https://api.didshwa.com/v3/HydroEventCritique"
+    state.apiData = null    
 }
 
 
@@ -210,20 +211,21 @@ def updated() {
 def initialize() {
     logger("debug", "initialize ${app.label}")
 
-//    if(pauseApp) {
-//        unschedule()
-//    }
-//    else {
-        // Subscribe to Hub restarts so we can make sure events are dealt with correctly
-        subscribe(location, "systemStart", hubRestartHandler)
+    unschedule()
+// Subscribe to Hub restarts so we can make sure events are dealt with correctly
+    subscribe(location, "systemStart", hubRestartHandler)
 
+    if(pauseApp) {
+        unschedule()
+    }
+    else {
     // Schedule to start polling every day the API
-//        currTime = new Date()
-//        if (currTime >= timeToday("12:30") || testApp) {
-//            startPolling()
-//        }
-        schedule("00 30 12 ? * * *", startPolling, [overwrite: true])
-//    }
+        currTime = new Date()
+        if (currTime >= timeToday("12:30") || testApp) {
+            startPolling()
+        }
+    schedule("00 15 13 ? * * *", startPolling, [overwrite: true])
+    }
 }
 
 
@@ -408,12 +410,29 @@ def handleHQEvents() {
                 eventYear = eventDate[0]
                 eventMonth = eventDate[1]
                 eventDay = eventDate[2]
-                eventStartHour = eventStartTime[0]
-                eventStartMinute = eventStartTime[1]
                 eventStartSecond = eventStartTime[2]
                 eventEndHour = eventEndTime[0]
                 eventEndMinute = eventEndTime[1]
-                eventEndSecond = eventEndTime[2]
+                eventEndSecond = eventEndTime[2] 
+                eventStartHourNum = 0
+                eventStartMinuteNum = 0
+                // To start the event 1 minute earlier
+                if (eventStartTime[1].toInteger() < 1) {  //Minutes
+                    if (eventStartTime[0].toInteger() > 1) {   //Hours
+                        eventStartMinuteNum = eventStartTime[1].toInteger() + 60 - 1
+                        eventStartHourNum = eventStartTime[0].toInteger() - 1
+                    }
+                    else {
+                        eventStartMinuteNum = 0
+                        eventStartHourNum = 0
+                    }
+                }
+                 else {
+                     eventStartMinuteNum = eventStartTime[1].toInteger() - 1
+                     eventStartHourNum = eventStartTime[0].toInteger()
+                 }
+                 eventStartHour = eventStartHourNum.toString().padLeft(2, "0")
+                 eventStartMinute = eventStartMinuteNum.toString().padLeft(2, "0")
                 
                 //Add event info to log and notification text
                 if (!newEventsPush) {
@@ -430,8 +449,8 @@ def handleHQEvents() {
                     myDeviceNewEvent.speak(eventDetectedTextAM)
         
                     if (morningHoursIncr && morningTempIncr && morningHoursIncr.substring(2,3) == ":") {
-						incrHr = morningHoursIncr.substring(0,1)
-						incrMin = morningHoursIncr.substring(3,4)
+						incrHr = morningHoursIncr.substring(0,2)
+						incrMin = morningHoursIncr.substring(3,5)
 
                         if (eventStartMinute >= incrMin) {
                             morningMinIncr = eventStartMinute.toInteger() - incrMin.toInteger()
@@ -444,9 +463,8 @@ def handleHQEvents() {
 							else
 								morningMinIncr = 0
 
-
                         if (eventStartHour >= morningHoursIncr) {
-                            morningHrIncr = eventStartHour.toInteger() - morningHoursIncr.toInteger()
+                            morningHrIncr = eventStartHour.toInteger() - incrHr.toInteger()
                         }
                         else {
                             morningHrIncr = 0
@@ -524,9 +542,9 @@ def setHouseBeforeMorning() {
         previousSettings.put("$thermostat",thermostat.currentValue("heatingSetpoint"))
         newSetpoint = thermostat.currentValue("heatingSetpoint") + morningTempIncr.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
     }
 }
 
@@ -556,9 +574,9 @@ def setHouseBeforeEvening() {
         previousSettings.put("$thermostat",thermostat.currentValue("heatingSetpoint"))
         newSetpoint = thermostat.currentValue("heatingSetpoint") + eveningTempIncr.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
     }
 }
 
@@ -620,12 +638,11 @@ def setHouseInMorningEventMode() {
     // Set back the thermostats that were increased before the event
     if (morningTempIncr) {
         for(thermostat in morningDeviceIncr) {
-            previousSettings.put("$thermostat",thermostat.currentValue("heatingSetpoint"))
             newSetpoint = thermostat.currentValue("heatingSetpoint") - morningTempIncr.toInteger()
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(1000)
+            pauseExecution(2000)
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(1000)
+            pauseExecution(2000)
         }
     }
     
@@ -633,9 +650,9 @@ def setHouseInMorningEventMode() {
         previousSettings.put("$thermostat",thermostat.currentValue("heatingSetpoint"))
         newSetpoint = thermostat.currentValue("heatingSetpoint") - eventEveningDegrees.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
     }
     
     state.previousSettings = previousSettings
@@ -703,12 +720,11 @@ def setHouseInEveningEventMode() {
     // Set back the thermostats that were increased before the event
     if (eveningTempIncr) {
         for(thermostat in eveningDeviceIncr) {
-            previousSettings.put("$thermostat",thermostat.currentValue("heatingSetpoint"))
             newSetpoint = thermostat.currentValue("heatingSetpoint") - eveningTempIncr.toInteger()
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(1000)
+            pauseExecution(2000)
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(1000)
+            pauseExecution(2000)
         }
     }
 
@@ -716,9 +732,9 @@ def setHouseInEveningEventMode() {
         previousSettings.put("$thermostat",thermostat.currentValue("heatingSetpoint"))
         newSetpoint = thermostat.currentValue("heatingSetpoint") - eventEveningDegrees.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
         thermostat.setHeatingSetpoint(newSetpoint)
-        pauseExecution(1000)
+        pauseExecution(2000)
     }
 
     state.previousSettings = previousSettings
@@ -788,9 +804,9 @@ def setHouseInMorningNormalMode() {
         if (thermostatTemp) {
             thermostat.setHeatingSetpoint(thermostatTemp)
             logger("debug", "$thermostat heating setpoint set to $thermostatTemp")
-            pauseExecution(1000)
+            pauseExecution(2000)
             thermostat.setHeatingSetpoint(thermostatTemp)
-            pauseExecution(1000)
+            pauseExecution(2000)
             thermostat.setHeatingSetpoint(thermostatTemp)
         }
     }
@@ -858,9 +874,9 @@ def setHouseInEveningNormalMode() {
         if (thermostatTemp) {
             thermostat.setHeatingSetpoint(thermostatTemp)
             logger("debug", "$thermostat heating setpoint set to $thermostatTemp")
-            pauseExecution(1000)
+            pauseExecution(2000)
             thermostat.setHeatingSetpoint(thermostatTemp)
-            pauseExecution(1000)
+            pauseExecution(2000)
         }
     }
 
