@@ -146,6 +146,11 @@ def pageConfig() {
 		    paragraph "<b>Select switch/light to turn on during EVENING event to indicate event state.</b>"
 		    input "eveningEventStateSwitch", "capability.switch", title: "Switches", multiple: false
 
+		    paragraph "<b>Select switch to turn when an event is detected for the TOMORROW'S MORNING.</b>"
+		    input "tomorrowMorningEventStateSwitch", "capability.switch", title: "Switches", multiple: false
+		    paragraph "<b>Select switch to turn when an event is detected for the TOMORROW'S EVENING.</b>"
+		    input "tomorrowEveningEventStateSwitch", "capability.switch", title: "Switches", multiple: false
+            
             paragraph "<b>Devices to send notifications to.</b>"
             input "sendPushMessage", "capability.notification", title: "Send a Pushover notification", multiple:true, required:false, submitOnChange:true
             if(sendPushMessage) {
@@ -220,7 +225,12 @@ def initialize() {
     logger("debug", "initialize ${app.label}")
 
     unschedule()
-// Subscribe to Hub restarts so we can make sure events are dealt with correctly
+    if (!state.tomorrowMorningEvent)
+        state.tomorrowMorningEvent = 0
+    if (!state.tomorrowEveningEvent)
+        state.tomorrowEveningEvent = 0
+
+    // Subscribe to Hub restarts so we can make sure events are dealt with correctly
     subscribe(location, "systemStart", hubRestartHandler)
 
     if(pauseApp) {
@@ -462,7 +472,13 @@ def handleHQEvents() {
                 }
 
                 //Let's program events 
+
                 if (eventStartHour.toInteger() < 12) {
+                    if (tomorrowMorningEventStateSwitch && !testApp) {
+                        tomorrowMorningEventStateSwitch.on()
+                        state.tomorrowMorningEvent++
+                    }
+
                     schedule("$eventStartSecond $eventStartMinute $eventStartHour $eventDay $eventMonth ? $eventYear", setHouseInMorningEventMode, [overwrite: false])
                     schedule("$eventEndSecond $eventEndMinute $eventEndHour $eventDay $eventMonth ? $eventYear", setHouseInMorningNormalMode, [overwrite: false])
                     newEventsPush = newEventsPush + "$eventStartHour:$eventStartMinute:$eventStartSecond to $eventEndHour:$eventEndMinute:$eventEndSecond"
@@ -493,6 +509,11 @@ def handleHQEvents() {
                     }
                 } 
                 else {
+                    if (tomorrowEveningEventStateSwitch && !testApp) {
+                        tomorrowEveningEventStateSwitch.on()                          
+                        state.tomorrowEveningEvent++
+                    }
+                    
                     schedule("$eventStartSecond $eventStartMinute $eventStartHour $eventDay $eventMonth ? $eventYear", setHouseInEveningEventMode, [overwrite: false])
                     schedule("$eventEndSecond $eventEndMinute $eventEndHour $eventDay $eventMonth ? $eventYear", setHouseInEveningNormalMode, [overwrite: false])
                     newEventsPush = newEventsPush + "$eventStartHour:$eventStartMinute:$eventStartSecond to $eventEndHour:$eventEndMinute:$eventEndSecond"
@@ -820,6 +841,11 @@ def setHouseInMorningNormalMode() {
     state.currentMode = "Normal"
     if (morningEventStateSwitch)
         morningEventStateSwitch.off()
+
+    if (state.tomorrowMorningEvent > 0 && !testApp)
+        state.tomorrowMorningEvent--            
+    if (tomorrowMorningEventStateSwitch && state.tomorrowMorningEvent == 0 && !testApp)
+        tomorrowMorningEventStateSwitch.off()
     
     myDeviceMorning.speak(morningAfterText)
 
@@ -896,9 +922,15 @@ def setHouseInEveningNormalMode() {
     }
 
     state.currentMode = "Normal"
+
     if (eveningEventStateSwitch)
         eveningEventStateSwitch.off()
 
+    if (state.tomorrowEveningEvent > 0 && !testApp)
+        state.tomorrowEveningEvent--            
+    if (tomorrowEveningEventStateSwitch && state.tomorrowEveningEvent == 0 && !testApp)
+        tomorrowMorningEventStateSwitch.off()
+    
     myDeviceEvening.speak(eveningAfterText)
 
     if(sendPushMessage && endEveningEventPush) {
@@ -948,6 +980,30 @@ def setHouseInEveningNormalMode() {
 
 }
 
+
+//************************************************************
+// setTomorrowSwitchOff
+//     Set the switch for tomorrow's event at OFF
+//
+// Signature(s)
+//     setTomorrowSwitchOff()
+//
+// Parameters
+//     None
+//
+// Returns
+//     None
+//
+//************************************************************
+def setTomorrowSwitchOff() {
+    logger("trace", "setTomorrowSwitchOff")
+    
+    if (tomorrowMorningEventStateSwitch)
+        tomorrowMorningEventStateSwitch.off()                    
+
+    if (tomorrowEveningEventStateSwitch)
+        tomorrowEveningEventStateSwitch.off()                    
+}    
 
 //************************************************************
 // logger
