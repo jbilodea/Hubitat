@@ -310,64 +310,69 @@ def uninstalled() {
 }
 
 def initialize() {
-    logger("debug", "initialize()")
-    def hasV1Device = false
-    cleanupChildDevices()
+	logger("debug", "initialize()")
+    subscribe(location, "systemStart", hubRestartHandler)    
+	def hasV1Device = false
+	cleanupChildDevices()
     subscribe("location", "systemStart", initialize)
     for (d in thinqDevices) {
-        def deviceDetails = state.foundDevices.find { it.id == d }
-        def driverName = ""
-        switch (deviceDetails.type) {
-            case deviceTypeConstants.Dryer:
-                driverName = "LG ThinQ Dryer"
-                break
-            case deviceTypeConstants.Washer:
-                driverName = "LG ThinQ Washer"
-                break
-            case deviceTypeConstants.Fridge:
-                driverName = "LG ThinQ Fridge"
-                break
-            case deviceTypeConstants.Oven:
-                driverName = "LG ThinQ Oven"
-                break
-            case deviceTypeConstants.Dishwasher:
-                driverName = "LG ThinQ Dishwasher"
-                break
-            case deviceTypeConstants.HVAC:
-                driverName = "LG ThinQ HVAC"
-                break
-        }
-        if (!hasV1Device)
-            hasV1Device = deviceDetails.version == "thinq1"
-        def childDevice = getChildDevice("thinq:"+deviceDetails.id)
-        if (childDevice == null) {
-            childDevice = addChildDevice("dcm.thinq", driverName, "thinq:" + deviceDetails.id, 1234, ["name": deviceDetails.name,isComponent: false])
-        if (!findMasterDevice() && deviceDetails.version == "thinq2") {   
-                childDevice.updateDataValue("master", "true")
-                childDevice.initialize()
-            }
-            else if (childDevice.getDataValue("master") != "true") {
-                childDevice.updateDataValue("master", "false")
-            }
-        }
-        
-        if (deviceDetails.version == "thinq1") {
-            childDevice.initialize()
-        } 
-        if (deviceDetails.version == "thinq2") {  
-            getDeviceSnapshot(deviceDetails, childDevice)
-        }
-    }
+		def deviceDetails = state.foundDevices.find { it.id == d }
+		def driverName = ""
+		switch (deviceDetails.type) {
+			case deviceTypeConstants.Dryer:
+				driverName = "LG ThinQ Dryer"
+				break
+			case deviceTypeConstants.Washer:
+				driverName = "LG ThinQ Washer"
+				break
+			case deviceTypeConstants.Fridge:
+				driverName = "LG ThinQ Fridge"
+				break
+			case deviceTypeConstants.Oven:
+				driverName = "LG ThinQ Oven"
+				break
+			case deviceTypeConstants.Dishwasher:
+				driverName = "LG ThinQ Dishwasher"
+				break
+			case deviceTypeConstants.HVAC:
+				driverName = "LG ThinQ HVAC"
+				break
+		}
+		if (!hasV1Device)
+			hasV1Device = deviceDetails.version == "thinq1"
+		def childDevice = getChildDevice("thinq:"+deviceDetails.id)
+		if (childDevice == null) {
+			childDevice = addChildDevice("dcm.thinq", driverName, "thinq:" + deviceDetails.id, 1234, ["name": deviceDetails.name,isComponent: false])
+		if (!findMasterDevice() && deviceDetails.version == "thinq2") {   
+				childDevice.updateDataValue("master", "true")
+				childDevice.initialize()
+			}
+			else if (childDevice.getDataValue("master") != "true") {
+				childDevice.updateDataValue("master", "false")
+			}
+		}
+		
+		if (deviceDetails.version == "thinq1") {
+			childDevice.initialize()
+		} 
+		if (deviceDetails.version == "thinq2") {  
+			getDeviceSnapshot(deviceDetails, childDevice)
+		}
+	}
 
-    if (hasV1Device) {
-        schedule("0 */1 * * * ? *", refreshV1Devices)
-        }
+	if (hasV1Device) {
+		schedule("0 */1 * * * ? *", refreshV1Devices)
+		}
     unschedule()
-    runIn (1800, register)
-    runIn (1980, initialize)
+    schedule("* 50 4/2 ? * * *", initialize)        
+    schedule("* 55 4/2 ? * * *", register)        
+//    runEvery1Hour(register)
+//    runEvery1Hour(initialize)
 }
 
+
 def getDeviceSnapshot(devDetails, child) {
+logger("debug", "getDeviceSnapshot(${devDetails} child = ${child})")
 
 	def data = lgAPIGet("${state.thinqUrl}/service/devices/${devDetails.id}")
 	log.debug data
@@ -479,8 +484,10 @@ def lgAPIGet(uri) {
 			]
 		) {
 			resp ->
-			if (resp.data.resultCode == "0000")
+            if (resp.data.resultCode == "0000") {
+logger("debug", "lgAPIGetJB(${resp.data})")
 				result = resp.data?.result
+            }
 			else {
 				logger("error", "lgAPIGet(${uri}) - ${responseCodeText[resp.data.resultCode]}")
 			}
@@ -843,7 +850,7 @@ def getDeviceThinQVersion(dev) {
 
 // Common device state processing methods
 def getParsedValue(value, param, modelInfo) {
-	logger("debug", "getParsedValue(${value}, ${param}, modelInfo[FILTERED])")
+//	logger("debug", "getParsedValue(${value}, ${param}, modelInfo[FILTERED])")
 
 	if (param == null)
 		return value
@@ -1085,7 +1092,7 @@ def decodeBinaryRTIMsgJSON(data) {
 
 	
 def decodeBinaryRTIMessage(protocol, modelInfo, data, returnCode) {
-	logger("debug", "decodeBinaryRTIMessage(${protocol}, modelInfo[FILTERED], ${data}, ${returnCode})")
+    //	logger("debug", "decodeBinaryRTIMessage(${protocol}, modelInfo[FILTERED], ${data}, ${returnCode})")
 
 	def output = [:]
 	def values = modelInfo.Value
@@ -1281,6 +1288,7 @@ def processDeviceMonitoring(dev, payload) {
 }
 
 def decodeMQTTValue(data, name) {
+logger("debug", "decodeMQTTValue(${data} name = ${name})")    
 	def namePart = name.split(/\./)
 
 	if (namePart.size() == 1) {
