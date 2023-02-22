@@ -361,6 +361,9 @@ logger("debug", "New API3 data, resp = ${resp.data.tomorrow}")
             currTime = new Date()
             if (currTime > timeToday("21:00")) {
                 unschedule(poll)
+logger("debug", "pollHandler UNSCHEDULE")
+logger("debug", "pollHandler currTime ${currTime}")
+logger("debug", "pollHandler timeToday ${timeToday("20:00")}")                
             }
             exit
         } else {
@@ -370,7 +373,7 @@ logger("debug", "New API5 data, resp = ${resp.data}")
 logger("debug", "New API6 data, resp = ${resp.data.tomorrow}")
             state.apiData = resp.data
             if (!resp.data.tomorrow) {
-                logger("debug", "New API data, but nothing schedule for tomorrow")
+                logger("debug", "API data changed, but nothing schedule for tomorrow")
             }
             else {
                 logger("debug", "New API data, let's see what's new")
@@ -582,14 +585,14 @@ def setHouseBeforeMorning() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") + morningTempIncr.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+//jb        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(3000)
-            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            pauseExecution(2000)
+//jb            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                 thermostat.setHeatingSetpoint(newSetpoint)
                 pauseExecution(2000)
-            }
-        }
+//jb            }
+//jb        }
     }
 }
 
@@ -618,14 +621,14 @@ def setHouseBeforeEvening() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") + eveningTempIncr.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+//jb        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(3000)
-            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            pauseExecution(2000)
+//jb            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                 thermostat.setHeatingSetpoint(newSetpoint)
                 pauseExecution(2000)
-            }
-        }
+//jb            }
+//jb        }
     }
 }
 
@@ -690,14 +693,14 @@ def setHouseInMorningEventMode() {
             newSetpoint = thermostat.currentValue("heatingSetpoint") - morningTempIncr.toInteger()
             thermostat.setHeatingSetpoint(newSetpoint)
             pauseExecution(2000)
-            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+//jb            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                 thermostat.setHeatingSetpoint(newSetpoint)
-                pauseExecution(3000)
-                if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                pauseExecution(2000)
+//jb                if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                     thermostat.setHeatingSetpoint(newSetpoint)
                     pauseExecution(2000)
-                }
-            }
+//jb                }
+//jb            }
         }
     }
     
@@ -706,14 +709,14 @@ def setHouseInMorningEventMode() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") - eventEveningDegrees.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+//jb        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(3000)
-            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            pauseExecution(2000)
+//jb            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                 thermostat.setHeatingSetpoint(newSetpoint)
                 pauseExecution(2000)
-            }
-        }
+//jb            }
+//jb        }
     }
     
     state.previousSettings = previousSettings
@@ -784,14 +787,14 @@ def setHouseInEveningEventMode() {
             newSetpoint = thermostat.currentValue("heatingSetpoint") - eveningTempIncr.toInteger()
             thermostat.setHeatingSetpoint(newSetpoint)
             pauseExecution(2000)
-            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+//jb            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                 thermostat.setHeatingSetpoint(newSetpoint)
-                pauseExecution(3000)
-                if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+                pauseExecution(2000)
+//jb                if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                     thermostat.setHeatingSetpoint(newSetpoint)
                     pauseExecution(2000)
-                }
-            }
+//jb                }
+//jb            }
         }
     }
 
@@ -800,14 +803,14 @@ def setHouseInEveningEventMode() {
         newSetpoint = thermostat.currentValue("heatingSetpoint") - eventEveningDegrees.toInteger()
         thermostat.setHeatingSetpoint(newSetpoint)
         pauseExecution(2000)
-        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+//jb        if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
             thermostat.setHeatingSetpoint(newSetpoint)
-            pauseExecution(3000)
-            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
+            pauseExecution(2000)
+//jb            if (thermostat.currentValue("heatingSetpoint") != newSetpoint) {
                 thermostat.setHeatingSetpoint(newSetpoint)
                 pauseExecution(2000)
-            }
-        }
+//jb            }
+//jb        }
     }
 
     state.previousSettings = previousSettings
@@ -883,14 +886,14 @@ def setHouseInMorningNormalMode() {
             thermostat.setHeatingSetpoint(thermostatTemp)
             logger("debug", "$thermostat heating setpoint set to $thermostatTemp")
             pauseExecution(2000)
-            if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
-                thermostat.setHeatingSetpoint(newSetpoint)
-                pauseExecution(3000)
-                if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
-                    thermostat.setHeatingSetpoint(newSetpoint)
+//jb            if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                thermostat.setHeatingSetpoint(thermostatTemp)
+                pauseExecution(2000)
+//jb                if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                    thermostat.setHeatingSetpoint(thermostatTemp)
                     pauseExecution(2000)
-                }
-            }
+//jb                }
+//jb            }
         }
     }
     
@@ -964,14 +967,14 @@ def setHouseInEveningNormalMode() {
             thermostat.setHeatingSetpoint(thermostatTemp)
             logger("debug", "$thermostat heating setpoint set to $thermostatTemp")
             pauseExecution(2000)
-            if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
-                thermostat.setHeatingSetpoint(newSetpoint)
-                pauseExecution(3000)
-                if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
-                    thermostat.setHeatingSetpoint(newSetpoint)
+//jb            if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                thermostat.setHeatingSetpoint(thermostatTemp)
+                pauseExecution(2000)
+//jb                if (thermostat.currentValue("heatingSetpoint") != thermostatTemp) {
+                    thermostat.setHeatingSetpoint(thermostatTemp)
                     pauseExecution(2000)
-                }
-            }
+//jb                }
+//jb            }
         }
     }
 
