@@ -353,9 +353,12 @@ def initialize() {
 		}
 		
 		if (deviceDetails.version == "thinq1") {
+logger("debug", "initialize THINQ1()")            
 			childDevice.initialize()
 		} 
 		if (deviceDetails.version == "thinq2") {  
+logger("debug", "initialize THINQ2()")           
+logger("info", "initialize/THINQ2")                
 			getDeviceSnapshot(deviceDetails, childDevice)
 		}
 	}
@@ -850,6 +853,9 @@ def getDeviceThinQVersion(dev) {
 
 // Common device state processing methods
 def getParsedValue(value, param, modelInfo) {
+logger("debug", "getParsedValue1(value = ${value})")
+logger("debug", "getParsedValue2(param = ${param})")
+logger("debug", "getParsedValue3(modelinfo = ${modelInfo})")
 //	logger("debug", "getParsedValue(${value}, ${param}, modelInfo[FILTERED])")
 
 	if (param == null)
@@ -1092,6 +1098,10 @@ def decodeBinaryRTIMsgJSON(data) {
 
 	
 def decodeBinaryRTIMessage(protocol, modelInfo, data, returnCode) {
+logger("debug", "decodeBinaryRTIMessage1(protocol = ${protocol})")
+logger("debug", "decodeBinaryRTIMessage2(modelinfo = ${modelInfo})")
+logger("debug", "decodeBinaryRTIMessage3(data = ${data})")
+logger("debug", "decodeBinaryRTIMessage4(returncode = ${returnCode})")
     //	logger("debug", "decodeBinaryRTIMessage(${protocol}, modelInfo[FILTERED], ${data}, ${returnCode})")
 
 	def output = [:]
@@ -1304,6 +1314,8 @@ logger("debug", "decodeMQTTValue(${data} name = ${name})")
 }
 
 def decodeMQTTMessage(dev, modelInfo, data) {
+logger("debug", "decodeMQTTMessage1(modelinfo = ${modelInfo})")    
+logger("debug", "decodeMQTTMessage2(data = ${data})")    
 	def output = [:]
 
 	if (data == null)
