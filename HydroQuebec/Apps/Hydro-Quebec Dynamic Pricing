@@ -223,8 +223,8 @@ def updated() {
 
 def initialize() {
     logger("debug", "initialize ${app.label}")
-
-    unschedule()
+//unschedule(setHouseInEveningNormalMode)
+//schedule("00 05 20 23 02 ? 2023", setHouseInEveningNormalMode, [overwrite: false])
     if (!state.tomorrowMorningEvent)
         state.tomorrowMorningEvent = 0
     if (!state.tomorrowEveningEvent)
@@ -932,7 +932,7 @@ def setHouseInEveningNormalMode() {
     if (state.tomorrowEveningEvent > 0 && !testApp)
         state.tomorrowEveningEvent--            
     if (tomorrowEveningEventStateSwitch && state.tomorrowEveningEvent == 0 && !testApp)
-        tomorrowMorningEventStateSwitch.off()
+        tomorrowEveningEventStateSwitch.off()
     
     myDeviceEvening.speak(eveningAfterText)
 
