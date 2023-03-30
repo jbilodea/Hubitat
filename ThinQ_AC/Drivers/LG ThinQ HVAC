@@ -396,6 +396,7 @@ def initialize() {
     logger("debug", "initialize()")
 
     if (getDataValue("master") == "true") {
+logger("debug", "MASTER JB Hvac()")
         if (interfaces.mqtt.isConnected())
             interfaces.mqtt.disconnect()
 
@@ -655,12 +656,14 @@ def processStateData(data) {
 	key = parent.getStateKey(device, acTimeToStop)
 	if (parent.checkValue(data, key))
 		sendEvent(name: "targetTimeToStop", value: data[key], displayed: false)
-	if (parent.checkValue(data, key)) {
+	key = parent.getStateKey(device, acStateOperation)
+    if (parent.checkValue(data, key)) {
 		sendEvent(name: "operation", value: data[key], displayed: false)
-		if (data[key] == 1)
+/* Code inserted */
+        if (data[key] == 1)
 			currentStateSwitch = "on"
 		else
-			currentStateSwitch = "off"
+			currentStateSwitch = "off"   
 		sendEvent(name: "switch", value: currentStateSwitch, descriptionText: "Was turned ${currentStateSwitch}")
 	}
 }
