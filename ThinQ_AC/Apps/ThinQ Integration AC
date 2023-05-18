@@ -25,6 +25,7 @@ definition(
 	author: "Dominick Meglio",
 	description: "Integrate LG ThinQ smart devices with Hubitat.",
 	category: "My Apps",
+   singleThreaded: true,
 	iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
 	iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
 	iconX3Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
@@ -353,29 +354,28 @@ def initialize() {
 		}
 		
 		if (deviceDetails.version == "thinq1") {
-logger("debug", "initialize THINQ1()")            
 			childDevice.initialize()
 		} 
 		if (deviceDetails.version == "thinq2") {  
-logger("debug", "initialize THINQ2()")           
-logger("info", "initialize/THINQ2")                
 			getDeviceSnapshot(deviceDetails, childDevice)
 		}
 	}
 
-	if (hasV1Device) {
+    unschedule()
+
+    if (hasV1Device) {
+//        runEvery1Minute(refreshV1Devices)
 		schedule("0 */1 * * * ? *", refreshV1Devices)
 		}
-    unschedule()
-    schedule("* 50 4/2 ? * * *", initialize)        
-    schedule("* 55 4/2 ? * * *", register)        
-//    runEvery1Hour(register)
-//    runEvery1Hour(initialize)
+    else {
+        schedule("* 50 4/2 ? * * *", initialize)        
+        schedule("* 55 4/2 ? * * *", register)
+    }        
 }
 
 
 def getDeviceSnapshot(devDetails, child) {
-logger("debug", "getDeviceSnapshot(${devDetails} child = ${child})")
+    logger("debug", "getDeviceSnapshot(${devDetails} child = ${child})")
 
 	def data = lgAPIGet("${state.thinqUrl}/service/devices/${devDetails.id}")
 	log.debug data
@@ -390,8 +390,9 @@ logger("debug", "getDeviceSnapshot(${devDetails} child = ${child})")
 		}
 		def stateData = decodeMQTTMessage(child, devDetails.modelJson, dataNode)
 
-		if (stateData != null)
+        if (stateData != null) {
 			child.processStateData(stateData)
+        }
 	}
 }
 
@@ -470,8 +471,8 @@ def getModelJson(url) {
 		logger("error", "getModelJson(${url}) - retrieving model json: ${e}")
 	}
 	return result
-}
-
+}   
+    
 def lgAPIGet(uri) {
 	logger("debug", "lgAPIGet(${uri})")
 
@@ -488,7 +489,6 @@ def lgAPIGet(uri) {
 		) {
 			resp ->
             if (resp.data.resultCode == "0000") {
-logger("debug", "lgAPIGetJB(${resp.data})")
 				result = resp.data?.result
             }
 			else {
@@ -543,10 +543,35 @@ def lgAPIPost(uri, body) {
 			]
 		) {
 			resp ->
-				if (resp?.data?.resultCode == "0000")
+            if (resp?.data?.resultCode == "0000") {
 					result = resp.data?.result
-				else
+            }
+            else {
 					logger("error", "lgAPIPost(${uri}, ${body}) - ${responseCodeText[resp.data.resultCode]}")
+// Debut de l'ajout                
+			        if (responseCodeText[data.resultCode] == "EMP_AUTHENTICATION_FAILED") {
+				       def refreshResult = getAccessToken([refresh_token: state.refresh_token, grant_type: "refresh_token"])
+				       if (refreshResult.toString().startsWith("LG.OAUTH.EC")) {
+					      state.access_token = null
+					      logger("error", "Refresh token failed ${refreshResult}")
+				    }
+				    else
+				    {
+                        state.auth_retry_cnt++
+					    state.access_token = refreshResult.access_token
+                        if (refreshResult.refresh_token) { 
+						    state.refresh_token = refreshResult.refresh_token
+                        }
+                        if (state.access_token != null & state.auth_retry_cnt < AUTH_RETRY_MAX) {
+    						return lgAPIPost(uri, body)
+                        }
+                        else {
+		    				state.auth_retry_cnt = 0
+                        }
+    				}
+                }
+// Fin de l'ajout                
+            }
 		}
 		state.auth_retry_cnt = 0
 		logger("trace", "lgAPIPost(${uri}, ${body}) - ${result}")
@@ -853,9 +878,9 @@ def getDeviceThinQVersion(dev) {
 
 // Common device state processing methods
 def getParsedValue(value, param, modelInfo) {
-logger("debug", "getParsedValue1(value = ${value})")
-logger("debug", "getParsedValue2(param = ${param})")
-logger("debug", "getParsedValue3(modelinfo = ${modelInfo})")
+    logger("debug", "getParsedValue1(value = ${value})")
+    logger("debug", "getParsedValue2(param = ${param})")
+    logger("debug", "getParsedValue3(modelinfo = ${modelInfo})")
 //	logger("debug", "getParsedValue(${value}, ${param}, modelInfo[FILTERED])")
 
 	if (param == null)
@@ -1020,7 +1045,7 @@ def stopRTIMonitoring(dev) {
 }
 
 def getRTIData(workList) {
-	logger("info", "getRTIData(${workList})")
+	logger("debug", "getRTIData(${workList})")
 
 	def result = [:]
 	def resultData = lgEdmPost("${state.thinq1Url}/rti/rtiResult", [
@@ -1098,10 +1123,10 @@ def decodeBinaryRTIMsgJSON(data) {
 
 	
 def decodeBinaryRTIMessage(protocol, modelInfo, data, returnCode) {
-logger("debug", "decodeBinaryRTIMessage1(protocol = ${protocol})")
-logger("debug", "decodeBinaryRTIMessage2(modelinfo = ${modelInfo})")
-logger("debug", "decodeBinaryRTIMessage3(data = ${data})")
-logger("debug", "decodeBinaryRTIMessage4(returncode = ${returnCode})")
+    logger("debug", "decodeBinaryRTIMessage1(protocol = ${protocol})")
+    logger("debug", "decodeBinaryRTIMessage2(modelinfo = ${modelInfo})")
+    logger("debug", "decodeBinaryRTIMessage3(data = ${data})")
+    logger("debug", "decodeBinaryRTIMessage4(returncode = ${returnCode})")
     //	logger("debug", "decodeBinaryRTIMessage(${protocol}, modelInfo[FILTERED], ${data}, ${returnCode})")
 
 	def output = [:]
@@ -1168,10 +1193,12 @@ def refreshV1Devices() {
 	for (dev in getChildDevices()) {
 		def thinqDeviceId = dev?.deviceNetworkId?.replace("thinq:", "")
 		if (getDeviceThinQVersion(dev) == "thinq1") {
-		 	if (dev.getDataValue("workId") == null)
+            if (dev.getDataValue("workId") == null) {
 				registerRTIMonitoring(dev)
-			if (dev.getDataValue("workId") != null)
+            }
+            if (dev.getDataValue("workId") != null) {
 				workList << ["deviceId": thinqDeviceId, "workId": dev.getDataValue("workId")]
+            }
 		}
 	}
 	if (workList.size() > 0) {
@@ -1257,8 +1284,6 @@ def findMQTTDataNode(modelInfo, data) {
        {controlWifi = modelInfo.ControlWifi
  	   key = controlWifi.keySet()[0]
        }
-    logger("debug", "findMQTTDataNode KEY4")    
-    logger("debug", "findMQTTDataNode KEY5 (${controlWifi[key].containsKey("data")})")    
 	if (modelInfo?.Config?.targetRoot != null) 
      return data."${modelInfo.Config.targetRoot}"
 	else if (controlWifi[key].containsKey("data")) 
@@ -1292,13 +1317,13 @@ def processDeviceMonitoring(dev, payload) {
 		}
 		def stateData = decodeMQTTMessage(dev, modelInfo, dataNode)
 
-		if (stateData != null)
+        if (stateData != null) {
 			dev.processStateData(stateData)
+        }
 	}
 }
 
 def decodeMQTTValue(data, name) {
-logger("debug", "decodeMQTTValue(${data} name = ${name})")    
 	def namePart = name.split(/\./)
 
 	if (namePart.size() == 1) {
@@ -1314,8 +1339,8 @@ logger("debug", "decodeMQTTValue(${data} name = ${name})")
 }
 
 def decodeMQTTMessage(dev, modelInfo, data) {
-logger("debug", "decodeMQTTMessage1(modelinfo = ${modelInfo})")    
-logger("debug", "decodeMQTTMessage2(data = ${data})")    
+    logger("debug", "decodeMQTTMessage1(modelinfo = ${modelInfo})")    
+    logger("debug", "decodeMQTTMessage2(data = ${data})")    
 	def output = [:]
 
 	if (data == null)
@@ -1407,16 +1432,18 @@ def generateKeyAndCSR() {
 def getCmdKeys(pdevice, pcmd) {
 
     def pcmdList = new JsonSlurper().parseText(pcmd)
-    if (getDeviceThinQVersion(pdevice) == "thinq1")
+    if (getDeviceThinQVersion(pdevice) == "thinq1") {
 		return [pcmdList[0].getAt(0), pcmdList[1], pcmdList[2].getAt(0)] 
+    }
     else
 		return [pcmdList[1], pcmdList[0].getAt(1), pcmdList[2].getAt(1)] 
 }	
 		
 def getStateKey	(pdevice, pcmd) {
     def pcmdList = new JsonSlurper().parseText(pcmd)
-	if (getDeviceThinQVersion(pdevice) == "thinq1")
+    if (getDeviceThinQVersion(pdevice) == "thinq1") {
 		return pcmdList[0]
+    }
 	else
 		return pcmdList[1]
 }	
