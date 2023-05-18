@@ -207,8 +207,8 @@ metadata {
         attribute "diagCode", "number"
         attribute "HdirStep", "number"
         attribute "VdirStep", "number"
-        attribute "HSwing", "number"
-        attribute "VSwing", "number"
+        attribute "HSwing", "string"
+        attribute "VSwing", "string"
         attribute "lightingDisplay", "number"
         attribute "operation", "number"
         attribute "opMode", "string"
@@ -396,7 +396,6 @@ def initialize() {
     logger("debug", "initialize()")
 
     if (getDataValue("master") == "true") {
-logger("debug", "MASTER JB Hvac()")
         if (interfaces.mqtt.isConnected())
             interfaces.mqtt.disconnect()
 
@@ -454,6 +453,8 @@ def temperatureTarget(ptemperatureTarget) {
    
     if (ptemperatureTarget != null) {
 		def keys = parent.getCmdKeys(device, cmdStateTargetTemp)
+        if (getTemperatureScale() == "F")
+            ptemperatureTarget = fahrenheitToCelsius(ptemperatureTarget)
 		result = parent.sendCommand(device, keys[0], keys[1], keys[2], ptemperatureTarget)		
     	sendEvent(name: "tempTarget", value: ptemperatureTarget, displayed: false)
 	}
@@ -570,8 +571,6 @@ def mqttConnectUntilSuccessful() {
 
   try {
     def mqtt = parent.retrieveMqttDetails()
-      logger("debug", "mqttConnectUntilSuccessful-2s() ${mqtt.server}")
-      logger("debug", "mqttConnectUntilSuccessful-2c() ${mqtt.clientId}")
 
     interfaces.mqtt.connect(mqtt.server,
                             mqtt.clientId,
@@ -582,7 +581,6 @@ def mqttConnectUntilSuccessful() {
                             caCertificate: mqtt.caCertificate,
                             clientCertificate: mqtt.certificate,
                             ignoreSSLIssues: true)
-    pauseExecution(3000)
     for (sub in mqtt.subscriptions) {
         interfaces.mqtt.subscribe(sub, 0)
     }
@@ -599,7 +597,7 @@ def mqttConnectUntilSuccessful() {
 def parse(message) {
     def topic = interfaces.mqtt.parseMessage(message)
     def payload = new JsonSlurper().parseText(topic.payload)
-    logger("trace", "parse(${payload})")
+//    logger("trace", "parse(${payload})")
 
     parent.processMqttMessage(this, payload)
 }
@@ -621,17 +619,29 @@ def mqttClientStatus(String message) {
 
 def processStateData(data) {    
     logger("debug", "processStateData1(${data})")
-	if (parent.getDeviceThinQVersion(device) == "thinq1")
+    def thinq1 = false
+    if (parent.getDeviceThinQVersion(device) == "thinq1") {
+        thinq1 = true
 		data = new JsonSlurper().parseText(data)   
+    }
 
 	prepareCmd("HSwing", data, acStateWDirHSwing, HSwingStr)		
 	prepareCmd("VSwing", data, acStateWDirVSwing, VSwingStr)		
 	prepareCmd("opMode", data, acStateOperationMode, opModeStr)		
 	prepareCmd("windStrength", data, acStateWindStrength, windStrengthStr)		
 	prepareCmd("lightingDisplay", data, acDisplayControl, lightingDisplayStr)		
-	def String key = parent.getStateKey(device, acDiagCode)
-    if (parent.checkValue(data, key))
-		sendEvent(name: "diagCode", value: data[key], displayed: false)
+
+    def String key = parent.getStateKey(device, acDiagCode)
+    if (parent.checkValue(data, key)) {
+        def Double theValue = 0
+        if (thinq1) {
+            theValue = Double.parseDouble(data[key])
+        }
+        else {
+            theValue = data[key]
+        }
+		sendEvent(name: "diagCode", value: theValue, displayed: false)
+    }
     key = parent.getStateKey(device, acStateWDirHStep)
 	if (parent.checkValue(data,key))
 		sendEvent(name: "HdirStep", value: data[key], displayed: false)
@@ -645,22 +655,51 @@ def processStateData(data) {
 	if (parent.checkValue(data, key))
 		sendEvent(name: "sleepTime", value: data[key], displayed: false)
 	key = parent.getStateKey(device, acStateCurrentTemp)
-	if (parent.checkValue(data, key))
-   		sendEvent(name: "tempCurrent", value: data[key], displayed: false)
+    if (parent.checkValue(data, key)) {
+        def double temp = 0
+        if (thinq1 == true) {
+           temp = Double.parseDouble(data[key])
+        }
+        else {
+           temp = data[key]
+        }
+
+        if (getTemperatureScale() == "C" && data.TempUnit == "FAHRENHEIT") {
+        temp = fahrenheitToCelsius(temp)
+      }
+      else if (getTemperatureScale() == "F" && (data.TempUnit == "CELSIUS" || data.TempUnit == "NS")) {
+        temp = celsiusToFahrenheit(temp)
+      }
+    sendEvent(name: "tempCurrent", value: temp, displayed: false)
+    }
 	key = parent.getStateKey(device, acStateTargetTemp)
-	if (parent.checkValue(data, key))
-		sendEvent(name: "tempTarget", value: data[key], displayed: false)
+    if (parent.checkValue(data, key)) {
+        def double temp = 0
+        if (thinq1 == true) {
+           temp = Double.parseDouble(data[key])
+        }
+        else {
+            temp = data[key]
+        }
+      if (getTemperatureScale() == "C" && data.TempUnit == "FAHRENHEIT") {
+        temp = fahrenheitToCelsius(temp)
+      }
+      else if (getTemperatureScale() == "F" && (data.TempUnit == "CELSIUS" || data.TempUnit == "NS")) {
+        temp = celsiusToFahrenheit(temp)
+      }
+      sendEvent(name: "tempTarget", value: temp, displayed: false)
+    }
 	key = parent.getStateKey(device, acTimeToStart)
-	if (parent.checkValue(data, key))
-		sendEvent(name: "targetTimeToStart", value: data[key], displayed: false)
+    if (parent.checkValue(data, key)) {
+	  sendEvent(name: "targetTimeToStart", value: data[key], displayed: false)
+    }
 	key = parent.getStateKey(device, acTimeToStop)
 	if (parent.checkValue(data, key))
 		sendEvent(name: "targetTimeToStop", value: data[key], displayed: false)
 	key = parent.getStateKey(device, acStateOperation)
     if (parent.checkValue(data, key)) {
 		sendEvent(name: "operation", value: data[key], displayed: false)
-/* Code inserted */
-        if (data[key] == 1)
+        if (data[key] == 1 || data[key] == "1")
 			currentStateSwitch = "on"
 		else
 			currentStateSwitch = "off"   
@@ -675,14 +714,17 @@ def prepareCmd(operator, pdata, acState, modeStr) {
 		def opModeJson = slurper.parseText(modeStr)
         def int resValue = pdata[key]
 		def stringValue = getKeyDefinition (resValue, opModeJson)	
-		sendEvent(name: operator, value: stringValue, displayed: false)
-		}
+        if (stringValue) {
+            sendEvent(name: operator, value: stringValue)  //, displayed: false)
+        }
+	}
 }		
 
 def getKeyDefinition(pkey, pdata) {
 	for (item in pdata.keySet()) {
-        if (pkey == pdata[item])
+        if (pkey == pdata[item].toString() || pkey == pdata[item]) {
 			return item
+        }
 	}
     return null
 }		
@@ -703,3 +745,4 @@ private logger(level, msg) {
     }
   }
 }
+
