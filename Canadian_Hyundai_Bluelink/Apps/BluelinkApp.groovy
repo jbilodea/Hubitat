@@ -34,10 +34,10 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import groovy.transform.Field
 
-static String appVersion()   { return "1.1.0" }
+static String appVersion()   { return "1.2.0" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
-    state.version = "1.1.0"
+    state.version = "1.2.0"
     state.transactionId = ""
 }
 
@@ -271,9 +271,10 @@ void authorize() {
     ]
     def url = API_URL + "v2/login" 
     API_Headers.referer = "https://mybluelink.ca/login"
-    def params = [uri: url, headers: API_Headers, requestContentType: "application/json", body: body, ignoreSSLIssues: true]  
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
+    def params = [uri: url, headers: API_Headers, timeout: valTimeout, requestContentType: "application/json", body: body, ignoreSSLIssues: true]  
     log("params1 ${params}", "info")
-
+   
     try
     {
         httpPost(params) { response -> authResponse(response) }
@@ -332,9 +333,9 @@ def authResponse(response)
         if (reJson.error.containsKey('errorCode'))
         {
             log("reJsonerrorCode: {$reJson.error.errorCode}", "debug")
-            if (reJson.error.errorCode == 7403)
+            if (reJson.error.errorCode == "7403" || reJson.error.errorCode == "7901")
             {
-                
+//                authorize()
             }
         }
     }
@@ -438,7 +439,7 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh = fa
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 120 //timeout in sec.
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
     log("getVehicleStatus params ${params}", "debug")
 
@@ -500,7 +501,7 @@ void getForceVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
     log("getVehicleStatus params ${params}", "debug")
 
@@ -555,7 +556,7 @@ void getNextService(com.hubitat.app.DeviceWrapper device)
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def uri = API_URL + "nxtsvc"
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
 
@@ -715,7 +716,7 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device)
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
     log("ClimFavoritesDisplay params ${params}", "debug")
 
@@ -985,7 +986,7 @@ void ClimStop(com.hubitat.app.DeviceWrapper device)
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def thePin = ["pin": bluelink_pin]
 
     def params = [uri: uri, headers: headers, requestContentType: "application/json", body: thePin, ignoreSSLIssues: true, timeout: valTimeout]  
@@ -1040,7 +1041,7 @@ void StartCharge(com.hubitat.app.DeviceWrapper device)
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def thePin = ["pin": bluelink_pin]
 
     def params = [uri: uri, headers: headers, requestContentType: "application/json", body: thePin, ignoreSSLIssues: true, timeout: valTimeout]  
@@ -1095,7 +1096,7 @@ void StopCharge(com.hubitat.app.DeviceWrapper device)
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def thePin = ["pin": bluelink_pin]
 
     def params = [uri: uri, headers: headers, requestContentType: "application/json", body: thePin, ignoreSSLIssues: true, timeout: valTimeout]  
@@ -1151,7 +1152,7 @@ void transactionStatus(com.hubitat.app.DeviceWrapper device, pAuth)
     headers.put('transactionId', state.transactionId.elements[0].name )
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     sendEventHelper(device, "transactionStatus", false)
 
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]    
@@ -1167,8 +1168,6 @@ void transactionStatus(com.hubitat.app.DeviceWrapper device, pAuth)
 
             if (reCode == 200) {
                 if (reJson.result.transaction.apiStatusCode == "null") {
-//jbjb                    
-log("transactionStatus runIn:", "debug")
                     runIn(6, callTransactionStatus)
                 }
                 else {
@@ -1201,7 +1200,7 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device)
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
     log("getChargeLimits params ${params}", "debug")
 
@@ -1246,14 +1245,15 @@ void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLe
     }
 
     def uri = API_URL + "evc/setsoc"
-    API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
     headers.put('accessToken', state.access_token)
     headers.put('vehicleId', state.vehicleId)
     headers.put('pAuth', getPinToken(device))
+    API_Headers.referer = 'https://mybluelink.ca/remote/tsoc'
+    API_Headers.from = 'SPA'
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
-    int valTimeout = refresh ? 240 : 30 //timeout in sec.
+    int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def theBody = ["pin": bluelink_pin, "tsoc": [["level": pcmdDCLevel, "plugType": "0"], ["level": pcmdACLevel, "plugType": "1"]]]
     def params = [uri: uri, headers: headers, requestContentType: "application/json", body: theBody, ignoreSSLIssues: true, timeout: 120]  
     log("setChargeLimits params ${params}", "debug")
