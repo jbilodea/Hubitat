@@ -9,7 +9,7 @@
   "dateReleased": "2024-01-14",
   "apps": [
     {
-      "id": "5a532ddb-389a-4082-b27d-79383c8a0388",
+      "id": "c31202b6-e8bf-4696-a1e1-f9332a3b84ea",
       "name": "Hyundai Bluelink App",
       "namespace": "jbilodea",
       "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Apps/BluelinkApp.groovy",
@@ -20,7 +20,7 @@
   ],
   "drivers": [
     {
-      "id": "78c74060-8424-4540-8666-96d94c844c02",
+      "id": "c31202b6-e8bf-4696-a1e1-f9332a3b84ea",
       "name": "Canadian Hyundai Bluelink Driver",
       "namespace": "jbilodea",
       "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Drivers/BluelinkDriver.groovy",
