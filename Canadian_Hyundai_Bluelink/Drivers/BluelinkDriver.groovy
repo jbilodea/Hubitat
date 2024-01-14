@@ -19,12 +19,13 @@
  *  8/29/22 - Initial work.
  *  11/27/22 - Initial Canadian only version
  *  01/09/23 - Add command ForceRefresh to refresh the data bypassing the cache*
+ *  01/14/24 - Add Battery Level
  */
 
-String appVersion()   { return "1.1.0" }
+String appVersion()   { return "1.1.1" }
 def setVersion(){
     state.name = "Hyundai Bluelink Driver"
-    state.version = "1.1.0"
+    state.version = "1.1.1"
 }
 
 metadata {
@@ -73,6 +74,7 @@ metadata {
                 attribute "BatteryInCharge", "string"
                 attribute "BatteryPercent", "string"
                 attribute "BatteryTimeToCharge", "string"
+                attribute "BatteryLevel", "string"
                 attribute "ACLevel", "number"
                 attribute "ACRange", "number"
                 attribute "DCLevel", "number"
