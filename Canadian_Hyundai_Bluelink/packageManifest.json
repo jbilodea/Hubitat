@@ -20,7 +20,7 @@
   ],
   "drivers": [
     {
-      "id": "c31202b6-e8bf-4696-a1e1-f9332a3b84ea",
+      "id": "615833b3-d2c2-4705-81fa-e963e988e1c6",
       "name": "Canadian Hyundai Bluelink Driver",
       "namespace": "jbilodea",
       "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Drivers/BluelinkDriver.groovy",
