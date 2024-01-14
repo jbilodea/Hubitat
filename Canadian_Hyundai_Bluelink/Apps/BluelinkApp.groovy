@@ -19,6 +19,7 @@
  *  8/29/22 - Initial work.
  *  11/27/22 - Initial Canadian only version
  *  01/09/23 - Add command ForceRefresh to refresh the data bypassing the cache
+ *  01/14/24 - Add Battery Level
  *
  *  Note:  FavDefrost is for Front Windshield Defrost
  *         FavHeating is for Heated features like the steering wheel and rear window
@@ -34,10 +35,10 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import groovy.transform.Field
 
-static String appVersion()   { return "1.2.0" }
+static String appVersion()   { return "1.1.1" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
-    state.version = "1.2.0"
+    state.version = "1.1.1"
     state.transactionId = ""
 }
 
@@ -462,6 +463,7 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh = fa
 // JBJB temporary
         sendEvent(device, [name: 'BatteryInCharge', value: reJson.result.status.evStatus.batteryCharge ? 'On' : 'Off'])
         sendEvent(device, [name: 'BatteryPercent', value: reJson.result.status.evStatus.batteryStatus])
+        sendEvent(device, [name: 'BatteryLevel', value: reJson.result.status.battery.batSoc])        
         def mins = reJson.result.status.evStatus.remainTime2.etc3.value
         int hours = mins / 60
         int minutes = mins % 60
@@ -524,6 +526,7 @@ void getForceVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh
 // JBJB temporary
         sendEvent(device, [name: 'BatteryInCharge', value: reJson.result.status.evStatus.batteryCharge ? 'On' : 'Off'])
         sendEvent(device, [name: 'BatteryPercent', value: reJson.result.status.evStatus.batteryStatus])
+        sendEvent(device, [name: 'BatteryLevel', value: reJson.result.status.battery.batSoc])        
         def mins = reJson.result.status.evStatus.remainTime2.etc3.value
         int hours = mins / 60
         int minutes = mins % 60
