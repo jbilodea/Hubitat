@@ -22,10 +22,10 @@
  *  01/14/24 - Add Battery Level
  */
 
-String appVersion()   { return "1.1.1" }
+String appVersion()   { return "1.2.1" }
 def setVersion(){
     state.name = "Hyundai Bluelink Driver"
-    state.version = "1.1.1"
+    state.version = "1.2.1"
 }
 
 metadata {
