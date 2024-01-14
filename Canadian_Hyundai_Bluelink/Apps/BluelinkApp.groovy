@@ -35,10 +35,10 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import groovy.transform.Field
 
-static String appVersion()   { return "1.1.1" }
+static String appVersion()   { return "1.2.1" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
-    state.version = "1.1.1"
+    state.version = "1.2.1"
     state.transactionId = ""
 }
 
