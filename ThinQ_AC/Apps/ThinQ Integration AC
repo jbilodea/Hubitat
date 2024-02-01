@@ -368,11 +368,20 @@ def initialize() {
 		schedule("0 */1 * * * ? *", refreshV1Devices)
 		}
     else {
-        schedule("* 50 4/2 ? * * *", initialize)        
-        schedule("* 55 4/2 ? * * *", register)
+        schedule("* 50 4/2 ? * * *", reregister)        
+//        schedule("* 50 4/2 ? * * *", initialize)        
+//        schedule("* 55 4/2 ? * * *", register)
     }        
 }
 
+def reregister() {
+    register()
+    
+    def certAndSubData = getCertAndSub()
+    logger("debug", "getCertAndSub = ${certAndSubData}")
+    state.cert = certAndSubData.certificatePem
+    state.subscriptions = certAndSubData.subscriptions
+}
 
 def getDeviceSnapshot(devDetails, child) {
     logger("debug", "getDeviceSnapshot(${devDetails} child = ${child})")
