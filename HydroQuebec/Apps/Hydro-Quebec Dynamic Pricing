@@ -28,9 +28,9 @@
 def setVersion(){
     state.name = "Hydro-Quebec Dynamic Pricing"
     state.version = "0.2.0"
-    state.apiUrl = "https://api.didshwa.com/v3/HydroEventCritique"
+    state.apiUrl = "https://hydro-event.apis.gcp.aberkan.net/creditPointeCritique"    
+//    state.apiUrl = "https://api.didshwa.com/v3/HydroEventCritique"
 }
-
 
 definition(
 	name: "Hydro-Quebec Dynamic Pricing",
@@ -239,10 +239,10 @@ def initialize() {
     else {
     // Schedule to start polling every day the API
         currTime = new Date()
-        if (currTime >= timeToday("13:15") || testApp) {
+        if (currTime >= timeToday("13:00") || testApp) {
             startPolling()
         }
-    schedule("00 15 13 ? * * *", startPolling, [overwrite: true])
+    schedule("00 30 13 ? * * *", startPolling, [overwrite: true])
     }
 }
 
@@ -354,6 +354,7 @@ def pollHandler(resp, data) {
         if (state.apiData == resp.data && !testApp) {
             logger("debug", "API data has not changed, nothing to do")
             
+logger("debug", "New API0 data, resp = ${resp}")
 logger("debug", "New API1 data, state = ${state.apiData}")
 logger("debug", "New API2 data, resp = ${resp.data}")
 logger("debug", "New API3 data, resp = ${resp.data.tomorrow}")
@@ -368,10 +369,12 @@ logger("debug", "pollHandler timeToday ${timeToday("20:00")}")
             exit
         } else {
             //Let's save new data to state variable and see what to do
+logger("debug", "New API00 data, resp = ${resp.info}")
 logger("debug", "New API4 data, state = ${state.apiData}")
 logger("debug", "New API5 data, resp = ${resp.data}")
 logger("debug", "New API6 data, resp = ${resp.data.tomorrow}")
             state.apiData = resp.data
+            state.apiInfo = resp.info
             if (!resp.data.tomorrow) {
                 logger("debug", "API data changed, but nothing schedule for tomorrow")
             }
@@ -411,12 +414,12 @@ def handleHQEvents() {
     if (testApp && testDate && testStartTime && testEndTime)
         response.tomorrow = [["date":testDate,"heureDebut":testStartTime,"heureFin":testEndTime]]
     
-    def startWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", response.info.dateDebutPeriodeHiver.replace(".000+0000",""))
-    def endWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", response.info.dateFinPeriodeHiver.replace(".000+0000",""))
+    def startWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", state.apiInfo.dateDebutPeriodeHiver.replace(".000+00:00",""))
+    def endWinterPeriod = Date.parse("yyyy-MM-dd'T'HH:mm:ss", state.apiInfo.dateFinPeriodeHiver.replace(".000+00:00",""))
     def currDate = new Date()
 
     //Check to see if we are within the period set by power company
-    if (response.info.dateDebutPeriodeHiver && response.info.dateFinPeriodeHiver && (timeOfDayIsBetween(startWinterPeriod, endWinterPeriod, currDate))) {
+    if (state.apiInfo.dateDebutPeriodeHiver && state.apiInfo.dateFinPeriodeHiver && (timeOfDayIsBetween(startWinterPeriod, endWinterPeriod, currDate))) {
         logger("debug", "We are within the Winter Period, continue...")
         
         //Are there new events
