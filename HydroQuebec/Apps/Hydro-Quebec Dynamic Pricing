@@ -1,5 +1,4 @@
-/*
- *  Hydro-Quebec Dynamic Pricing App
+/*  Hydro-Quebec Dynamic Pricing App
  *  Project URL: https://github.com/NelsonClark/Hubitat/tree/main/Apps/Hydro_Quebec_Dynamic_Pricing
  *  Copyright 2022 Nelson Clark
  *
@@ -580,7 +579,7 @@ def handleHQEvents() {
 def setHouseBeforeMorning() {
     logger("trace", "setHouseBeforeMorning")
 
-    if (eventMorningDisableSwitch) {
+    if (eventMorningDisableSwitch.currentValue("switch") == "on") {
         exit
     }
 
@@ -616,7 +615,7 @@ def setHouseBeforeMorning() {
 def setHouseBeforeEvening() {
     logger("trace", "setHouseBeforeEvening")
 
-    if (eventEveningDisableSwitch) {
+    if (eventEveningDisableSwitch.currentValue("switch") == "on") {
         exit
     }
 
@@ -652,8 +651,8 @@ def setHouseBeforeEvening() {
 def setHouseInMorningEventMode() {
     logger("trace", "setHouseInMorningEventMode")
     
-    if (eventMorningDisableSwitch) {
-        logger("warn", "Morning event disable activated, skipping this event!")
+    if (eventMorningDisableSwitch.currentValue("switch") == "on") {
+        logger("warn", "Morning event disable activated, skipping this event!  ${eventMorningDisableSwitch}")
         exit
     }
 
@@ -746,7 +745,7 @@ def setHouseInMorningEventMode() {
 def setHouseInEveningEventMode() {
     logger("trace", "setHouseInEveningEventMode")
 
-    if (eventEveningDisableSwitch) {
+    if (eventEveningDisableSwitch.currentValue("switch") == "on") {
         logger("warn", "Evening event disable activated, skipping this event!")
         exit
     }
@@ -840,7 +839,7 @@ def setHouseInEveningEventMode() {
 def setHouseInMorningNormalMode() {
     logger("trace", "setHouseInMorningNormalMode")
     
-    if (eventMorningDisableSwitch) {
+    if (eventMorningDisableSwitch.currentValue("switch") == "on") {
         exit
     }
 
@@ -923,7 +922,7 @@ def setHouseInMorningNormalMode() {
 def setHouseInEveningNormalMode() {
     logger("trace", "setHouseInEveningNormalMode")
 
-    if (eventEveningDisableSwitch) {
+    if (eventEveningDisableSwitch.currentValue("switch") == "on") {
         exit
     }
 
