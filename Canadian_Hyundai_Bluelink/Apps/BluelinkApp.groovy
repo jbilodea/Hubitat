@@ -46,9 +46,9 @@ def setVersion(){
 @Field static String API_URL = "https://mybluelink.ca/tods/api/"
 @Field static String client_id = "m66129Bb-em93-SPAHYN-bZ91-am4540zp19920"
 @Field static String client_secret = "v558o935-6nne-423i-baa8"
-@Field static Map    API_Headers =  ["content-type": "application/json;charset=UTF-8",
-                                    "accept": "application/json, text/plain, */*",
-                                    "accept-encoding": "gzip, deflate, br",
+@Field static Map    API_Headers =  ["content-type": "application/json",
+                                    "accept": "application/json",
+                                    "accept-encoding": "gzip",
                                     "accept-language": "en-US,en;q=0.9",
                                     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36",
                                     "Host": "mybluelink.ca",
@@ -250,12 +250,13 @@ void authorize() {
     // make sure there are no outstanding token refreshes scheduled
     unschedule()
     API_Headers =  ["content-type": "application/json;charset=UTF-8",
-                                    "accept": "application/json, text/plain, */*",
-                                    "accept-encoding": "gzip, deflate, br",
+                                    "accept": "application/json",
+                                    "accept-encoding": "gzip",
                                     "accept-language": "en-US,en;q=0.9",
                                     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36",
                                     "Host": "mybluelink.ca",
                                     "Connection": "keep-alive",
+"Deviceid": "TW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzEzOC4wLjAuMCBTYWZhcmkvNTM3LjM2IEVkZy8xMzguMC4wLjArV2luMzIrMTIzNCsxMjM0",
                                     "origin": "https://mybluelink.ca",
                                     "referer": "https://mybluelink.ca/login",
 //                                    "from": "SPA",
@@ -272,6 +273,7 @@ void authorize() {
     ]
     def url = API_URL + "v2/login" 
     API_Headers.referer = "https://mybluelink.ca/login"
+    
     int valTimeout = refresh ? 240 : 60 //timeout in sec.
     def params = [uri: url, headers: API_Headers, timeout: valTimeout, requestContentType: "application/json", body: body, ignoreSSLIssues: true]  
     log("params1 ${params}", "info")
@@ -345,7 +347,6 @@ def authResponse(response)
         state.access_token = reJson.result.token.accessToken
         state.refresh_token = reJson.result.token.refreshToken
         def expireIn = reJson.result.token.expireIn
-
 //      Integer expireTime = (Integer.parseInt(reJson.result.expireIn) - 180)
         Integer expireTime = reJson.result.token.expireIn - 180
         log("Bluelink token refreshed successfully, Next Scheduled in: ${expireTime} sec", "debug")
