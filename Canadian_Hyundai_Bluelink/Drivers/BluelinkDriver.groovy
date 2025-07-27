@@ -72,9 +72,9 @@ metadata {
                 attribute "DoorLocks", "string"
                 attribute "Trunk", "string"
                 attribute "BatteryInCharge", "string"
-                attribute "BatteryPercent", "string"
+                attribute "BatteryPercent", "number"
                 attribute "BatteryTimeToCharge", "string"
-                attribute "BatteryLevel", "string"
+                attribute "BatteryLevel", "number"
                 attribute "ACLevel", "number"
                 attribute "ACRange", "number"
                 attribute "DCLevel", "number"
@@ -93,6 +93,7 @@ metadata {
                 command "StartCharge"
                 command "StopCharge"
                 command "ForceRefresh"
+                command "Discover"
             }
 
     preferences {
@@ -217,6 +218,13 @@ void StopCharge()
 {
     log("StopCharge called", "trace")
     parent.StopCharge(device)
+}
+
+void Discover()
+{
+    log("DiscoverVehicles called", "trace")
+    parent.getVehicleStatus(device, fullRefresh, false)
+    updateHtml()
 }
 
 ///
