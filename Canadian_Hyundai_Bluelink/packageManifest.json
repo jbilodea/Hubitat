@@ -1,10 +1,10 @@
 {
   "packageName": "Canadian Hyundai Bluelink",
-  "releaseNotes": "v 1.2.1  Add 12V Battery Level",
+  "releaseNotes": "v 1.2.2  Charging information is now missing, fix-it",
   "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
   "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044/59",
   "author": "Jean Bilodeau",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "minimumHEVersion": "0.0",
   "dateReleased": "2024-01-14",
   "apps": [
@@ -28,3 +28,4 @@
     }
   ]
 }
+
