@@ -1,12 +1,12 @@
 {
   "packageName": "Canadian Hyundai Bluelink",
-  "releaseNotes": "v 1.2.2  Charging information is now missing, fix-it",
+  "releaseNotes": "v 1.2.3  Charging information is now missing, fix-it + DC Range fixed",
   "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
   "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044/59",
   "author": "Jean Bilodeau",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "minimumHEVersion": "0.0",
-  "dateReleased": "2024-01-14",
+  "dateReleased": "2025-11-29",
   "apps": [
     {
       "id": "c31202b6-e8bf-4696-a1e1-f9332a3b84ea",
@@ -28,4 +28,5 @@
     }
   ]
 }
+
 
