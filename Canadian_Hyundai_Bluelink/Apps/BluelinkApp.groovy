@@ -35,7 +35,7 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import groovy.transform.Field
 
-static String appVersion()   { return "1.2.2" }
+static String appVersion()   { return "1.2.3" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
     state.version = "1.2.1"
@@ -612,6 +612,13 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
                 sendEvent(device, [name : 'BatteryPercent', value: batteryStatus])
                 log.info "✓ BatteryPercent: ${batteryStatus}%"
             }
+            
+		    // Autonomie EV (c’est ici qu’il faut l’ajouter)
+    		def evRange = evStatus?.drvDistance?.getAt(0)?.rangeByFuel?.evModeRange?.value
+    		if (evRange != null) {
+        		sendEvent(device, [name: 'DCRange', value: evRange])
+        		log.info "✓ DCRange (EV range): ${evRange}"
+    		}
             
             // Branché ou non
             def batteryPlugin = evStatus?.batteryPlugin
@@ -1468,7 +1475,6 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
         
         if (reJson?.result && reJson.result.size() >= 2) {
             sendEvent(device, [name: 'DCLevel', value: reJson.result[0].level])
-            sendEvent(device, [name: 'DCRange', value: reJson.result[0].dte.rangeByFuel.totalAvailableRange.value])
             sendEvent(device, [name: 'ACLevel', value: reJson.result[1].level])
             sendEvent(device, [name: 'ACRange', value: reJson.result[1].dte.rangeByFuel.totalAvailableRange.value])
             
