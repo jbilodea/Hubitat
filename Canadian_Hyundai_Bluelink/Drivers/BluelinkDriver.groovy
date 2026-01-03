@@ -18,14 +18,15 @@
  *  History:
  *  8/29/22 - Initial work.
  *  11/27/22 - Initial Canadian only version
- *  01/09/23 - Add command ForceRefresh to refresh the data bypassing the cache*
+ *  01/09/23 - Add command ForceRefresh to refresh the data bypassing the cache
  *  01/14/24 - Add Battery Level
+ *  12/29/25 - Minor improvements for Cloudflare compatibility (v1.2.2)
  */
 
-String appVersion()   { return "1.2.1" }
+String appVersion()   { return "1.2.2" }
 def setVersion(){
     state.name = "Hyundai Bluelink Driver"
-    state.version = "1.2.1"
+    state.version = "1.2.2"
 }
 
 metadata {
@@ -33,7 +34,7 @@ metadata {
             name: "Canadian Hyundai Bluelink Driver",
             namespace: "jbilodea",
             description: "Driver for accessing Canadian Hyundai Bluelink web services",
-            importUrl: "https://raw.githubusercontent.com/jbilodea/Hyundai-Bluelink/main/BluelinkApp.groovy",
+            importUrl: "https://raw.githubusercontent.com/jbilodea/Hyundai-Bluelink/main/BluelinkDriver.groovy",
             author: "Jean Bilodeau")
             {
                 capability "Initialize"
@@ -79,6 +80,12 @@ metadata {
                 attribute "ACRange", "number"
                 attribute "DCLevel", "number"
                 attribute "DCRange", "number"
+                attribute "LastRefreshTime", "string"
+                attribute "locLatitude", "string"
+                attribute "locLongitude", "string"
+                attribute "locAltitude", "string"
+                attribute "locSpeed", "string"
+                attribute "locUpdateTime", "string"
                 
                 command "Lock"
                 command "Unlock"
@@ -100,6 +107,12 @@ metadata {
             input("fullRefresh", "bool",
                     title: "Full refresh - Turn on this option to directly query the vehicle for status instead of using the vehicle's cached status. Warning: Turning on this option will result in status refreshes that can take as long as 2 minutes.",
                     defaultValue: false)
+            input("autoRefreshInterval", "enum",
+                    title: "Auto-refresh interval (optional)",
+                    description: "Automatically refresh vehicle status at this interval",
+                    required: false,
+                    defaultValue: "0",
+                    options: ["0": "Disabled", "15": "Every 15 minutes", "30": "Every 30 minutes", "60": "Every hour"])
             }
             section("Logging") {
                 input "logging", "enum", title: "Log Level", required: false, defaultValue: "INFO", options: ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
@@ -115,7 +128,8 @@ void installed()
 {
     log("installed() called", "trace")
     setVersion()
-    fullRefresh = false;
+    fullRefresh = false
+    scheduleAutoRefresh()
 }
 
 void updated()
@@ -136,20 +150,45 @@ void parse(String message)
 ///
 void initialize() {
     log("initialize() called", "trace")
+    scheduleAutoRefresh()
     refresh()
 }
 
 void refresh()
 {
     log("refresh called", "trace")
+    
+    // Protection: éviter les refresh trop fréquents (rate limiting)
+    def lastRefresh = state.lastRefreshTime ?: 0
+    def currentTime = now()
+    def timeSinceLastRefresh = (currentTime - lastRefresh) / 1000 // en secondes
+    
+    if (timeSinceLastRefresh < 30) {
+        log("Refresh called too soon (${timeSinceLastRefresh}s ago). Please wait at least 30 seconds between refreshes to avoid rate limiting.", "warn")
+        return
+    }
+    
+    state.lastRefreshTime = currentTime
     parent.getVehicleStatus(device, fullRefresh, false)
     updateHtml()
 }
 
 void ForceRefresh()
 {
-    log("Forcerefresh called", "trace")
-    parent.getForceVehicleStatus(device, fullRefresh, false)
+    log("ForceRefresh called", "trace")
+    
+    // Protection: éviter les force refresh trop fréquents (rate limiting plus strict)
+    def lastForceRefresh = state.lastForceRefreshTime ?: 0
+    def currentTime = now()
+    def timeSinceLastForce = (currentTime - lastForceRefresh) / 1000 / 60 // en minutes
+    
+    if (timeSinceLastForce < 10) {
+        log("ForceRefresh called too soon (${Math.round(timeSinceLastForce)} minutes ago). Please wait at least 10 minutes between force refreshes to avoid rate limiting.", "warn")
+        return
+    }
+    
+    state.lastForceRefreshTime = currentTime
+    parent.getVehicleStatus(device, true, false) // Force refresh = true
     updateHtml()
 }
 
@@ -157,7 +196,7 @@ void Lock()
 {
     log("Lock called", "trace")
     parent.Lock(device)
-    unschedule()
+    unschedule(refresh) // Unschedule only refresh, not auto-refresh
     runIn(45, "refresh")
 }
 
@@ -165,7 +204,7 @@ void Unlock()
 {
     log("Unlock called", "trace")
     parent.Unlock(device)
-    unschedule()
+    unschedule(refresh)
     runIn(45, "refresh")
 }
 
@@ -177,27 +216,37 @@ void Location()
 
 def SetChargeLevel(pcmdACLevel, pcmdDCLevel) 
 {
-    log("SetChargeLevel called", "trace")
+    log("SetChargeLevel called: AC=${pcmdACLevel}%, DC=${pcmdDCLevel}%", "info")
     if (pcmdACLevel != null && pcmdDCLevel != null) {
         parent.setChargeLimits(device, pcmdACLevel, pcmdDCLevel)
-        unschedule()
+        unschedule(refresh)
         runIn(30, "refresh")
+    } else {
+        log("SetChargeLevel: Invalid parameters - both AC and DC levels are required", "error")
     }
 }
 
 def ClimFavoritesStart(pcmdFavoriteNbr) 
 {
-    log("ClimFavoritesStart called", "trace")
+    log("ClimFavoritesStart called: Favorite #${pcmdFavoriteNbr}", "info")
     if (pcmdFavoriteNbr != null) {
         parent.ClimFavoritesStart(device, pcmdFavoriteNbr)
+        unschedule(refresh)
+        runIn(60, "refresh") // Attendre 60s avant de refresh
+    } else {
+        log("ClimFavoritesStart: Invalid parameter - favorite number required", "error")
     }
 }
 
 void ClimManual(pcmdTemp, pcmdDefrost, pcmdHeating)
 {
-    log("ClimManual called ${pcmdTemp} / ${pcmdDefrost} / ${pcmdHeating}", "trace")
+    log("ClimManual called: Temp=${pcmdTemp}°C, Defrost=${pcmdDefrost}, Heating=${pcmdHeating}", "info")
     if (pcmdTemp != null && pcmdDefrost != null && pcmdHeating != null) {
         parent.ClimManual(device, pcmdTemp, pcmdDefrost, pcmdHeating)
+        unschedule(refresh)
+        runIn(60, "refresh")
+    } else {
+        log("ClimManual: Invalid parameters - all parameters are required", "error")
     }
 }
 
@@ -205,18 +254,58 @@ void ClimStop()
 {
     log("ClimStop called", "trace")
     parent.ClimStop(device)
+    unschedule(refresh)
+    runIn(30, "refresh")
 }
 
 void StartCharge()
 {
-    log("StartCharge called", "trace")
+    log("StartCharge called", "info")
     parent.StartCharge(device)
+    unschedule(refresh)
+    runIn(60, "refresh")
 }
 
 void StopCharge()
 {
-    log("StopCharge called", "trace")
+    log("StopCharge called", "info")
     parent.StopCharge(device)
+    unschedule(refresh)
+    runIn(30, "refresh")
+}
+
+///
+// Auto-refresh scheduling
+///
+private void scheduleAutoRefresh() {
+    unschedule(autoRefresh)
+    
+    def interval = settings?.autoRefreshInterval?.toInteger() ?: 0
+    
+    if (interval > 0) {
+        log("Scheduling auto-refresh every ${interval} minutes", "info")
+        // Utiliser une méthode de schedule appropriée selon l'intervalle
+        switch(interval) {
+            case 15:
+                schedule("0 */15 * * * ?", autoRefresh)
+                break
+            case 30:
+                schedule("0 */30 * * * ?", autoRefresh)
+                break
+            case 60:
+                schedule("0 0 * * * ?", autoRefresh)
+                break
+        }
+    } else {
+        log("Auto-refresh disabled", "debug")
+    }
+}
+
+void autoRefresh() {
+    log("Auto-refresh triggered", "debug")
+    // Auto-refresh utilise le cache (fullRefresh = false) pour éviter de surcharger l'API
+    parent.getVehicleStatus(device, false, false)
+    updateHtml()
 }
 
 ///
@@ -225,19 +314,62 @@ void StopCharge()
 private void updateHtml()
 {
     log("updateHtml", "trace")
-    log("updateHtml DoorLocks ${device.currentValue("DoorLocks")}", "trace")
 
     def builder = new StringBuilder()
+    builder << "<style>"
+    builder << ".bldr-tbl { width: 100%; border-collapse: collapse; }"
+    builder << ".bldr-label { font-weight: bold; padding: 5px; }"
+    builder << ".bldr-text { padding: 5px; }"
+    builder << ".bldr-status-ok { color: green; }"
+    builder << ".bldr-status-warn { color: orange; }"
+    builder << ".bldr-status-error { color: red; }"
+    builder << "</style>"
+    
     builder << "<table class=\"bldr-tbl\">"
-    String statDoors = device.currentValue("DoorLocks")
-    def statDoor = device.currentValue("DoorLocks")
-    log("updateHtml statDoors ${statDoors}", "trace")
-    log("updateHtml statDoor ${statDoor}", "trace")
-    builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Doors:" + "</td><td class=\"bldr-text\" style=\"text-align:left;padding-left:5px\">" + statDoors + "</td></tr>"
-    String statTrunk = device.currentValue("Trunk")
-    builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Trunk:" + "</td><td class=\"bldr-text\" style=\"text-align:left;padding-left:5px\">" + statTrunk + "</td></tr>"
-    String statEngine = device.currentValue("Engine")
-    builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Engine:" + "</td><td class=\"bldr-text\" style=\"text-align:left;padding-left:5px\">" + statEngine + "</td></tr>"
+    
+    // Doors
+    String statDoors = device.currentValue("DoorLocks") ?: "Unknown"
+    def doorClass = statDoors == "Locked" ? "bldr-status-ok" : "bldr-status-warn"
+    builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Doors:" + "</td>"
+    builder << "<td class=\"bldr-text ${doorClass}\" style=\"text-align:left;padding-left:5px\">" + statDoors + "</td></tr>"
+    
+    // Trunk
+    String statTrunk = device.currentValue("Trunk") ?: "Unknown"
+    def trunkClass = statTrunk == "Closed" ? "bldr-status-ok" : "bldr-status-warn"
+    builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Trunk:" + "</td>"
+    builder << "<td class=\"bldr-text ${trunkClass}\" style=\"text-align:left;padding-left:5px\">" + statTrunk + "</td></tr>"
+    
+    // Engine
+    String statEngine = device.currentValue("Engine") ?: "Unknown"
+    builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Engine:" + "</td>"
+    builder << "<td class=\"bldr-text\" style=\"text-align:left;padding-left:5px\">" + statEngine + "</td></tr>"
+    
+    // Battery (pour véhicules EV)
+    String batteryPercent = device.currentValue("BatteryPercent")
+    if (batteryPercent) {
+        builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Battery:" + "</td>"
+        builder << "<td class=\"bldr-text\" style=\"text-align:left;padding-left:5px\">" + batteryPercent + "%</td></tr>"
+        
+        String batteryInCharge = device.currentValue("BatteryInCharge")
+        if (batteryInCharge) {
+            builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Charging:" + "</td>"
+            builder << "<td class=\"bldr-text\" style=\"text-align:left;padding-left:5px\">" + batteryInCharge + "</td></tr>"
+        }
+        
+        String dcRange = device.currentValue("DCRange")
+        if (dcRange) {
+            builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Range:" + "</td>"
+            builder << "<td class=\"bldr-text\" style=\"text-align:left;padding-left:5px\">" + dcRange + " km</td></tr>"
+        }
+    }
+    
+    // Last update
+    String lastRefresh = device.currentValue("LastRefreshTime")
+    if (lastRefresh) {
+        builder << "<tr><td class=\"bldr-label\" style=\"text-align:left;\">" + "Last Update:" + "</td>"
+        builder << "<td class=\"bldr-text\" style=\"text-align:left;padding-left:5px;font-size:0.9em\">" + lastRefresh + "</td></tr>"
+    }
+    
     builder << "</table>"
     String newHtml = builder.toString()
     sendEvent(name:"statusHtml", value: newHtml)
@@ -290,4 +422,3 @@ def log(Object data, String type) {
         }
     }
 }
-
