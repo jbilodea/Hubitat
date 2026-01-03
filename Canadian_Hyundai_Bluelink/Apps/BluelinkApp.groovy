@@ -1,7 +1,16 @@
 /**
- *  Hyundai Bluelink Application
+ *  Hyundai Bluelink Application - CLOUDFLARE FIX
  *
  *  Author:         Tim Yuhl & Jean Bilodeau for Canadian version
+ *  Modified:       2025-12-29 - Fixed Cloudflare Error 429
+ *
+ *  Changes in v1.2.4:
+ *  - Updated User-Agent to Chrome 131 (was Chrome 75)
+ *  - Added sec-ch-ua headers for Cloudflare compatibility
+ *  - Dynamic DeviceId generation (was static)
+ *  - Rate limiting delays between requests
+ *  - Improved cookie management
+ *  - Better error 429 handling
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
  *  files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
@@ -14,31 +23,17 @@
  *  WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
  *  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
  *  ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
- *
- *  History:
- *  8/29/22 - Initial work.
- *  11/27/22 - Initial Canadian only version
- *  01/09/23 - Add command ForceRefresh to refresh the data bypassing the cache
- *  01/14/24 - Add Battery Level
- *
- *  Note:  FavDefrost is for Front Windshield Defrost
- *         FavHeating is for Heated features like the steering wheel and rear window
- *
- * Special thanks to:
- *
- * @WindowWasher for his good work on this app and driver.  I started this app by using his and modifying it for Canada users
- *
- * @fuatakgun for his coding in Home Assistant for the Canadian version.  I look at his code to understand the Canadian version
  */
 
 import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import groovy.transform.Field
+import java.security.MessageDigest
 
-static String appVersion()   { return "1.2.3" }
+static String appVersion()   { return "1.2.4" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
-    state.version = "1.2.1"
+    state.version = "1.2.4"
     state.transactionId = ""
 }
 
@@ -46,22 +41,31 @@ def setVersion(){
 @Field static String API_URL = "https://mybluelink.ca/tods/api/"
 @Field static String client_id = "m66129Bb-em93-SPAHYN-bZ91-am4540zp19920"
 @Field static String client_secret = "v558o935-6nne-423i-baa8"
-@Field static Map    API_Headers =  ["content-type": "application/json",
-                                    "accept": "application/json",
-                                    "accept-encoding": "gzip",
-                                    "accept-language": "en-US,en;q=0.9",
-                                    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36",
-                                    "Host": "mybluelink.ca",
-                                    "Connection": "keep-alive",
-                                    "origin": "https://mybluelink.ca",
-                                    "referer": "https://mybluelink.ca/login",
-//                                    "from": "SPA",
-                                    "from": "CWP",                                     
-                                    "language": "0",
-                                    "offset": "0",
-                                    "sec-fetch-dest": "empty",
-                                    "sec-fetch-mode": "cors",
-                                    "sec-fetch-site": "same-origin"]
+
+// UPDATED: Modern headers to bypass Cloudflare detection
+@Field static Map API_Headers = [
+    "content-type": "application/json",
+    "accept": "application/json, text/plain, */*",
+    "accept-encoding": "gzip, deflate, br",
+    "accept-language": "en-US,en;q=0.9,fr-CA;q=0.8,fr;q=0.7",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Host": "mybluelink.ca",
+    "Connection": "keep-alive",
+    "origin": "https://mybluelink.ca",
+    "referer": "https://mybluelink.ca/login",
+    "from": "CWP",
+    "language": "0",
+    "offset": "-5",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-origin",
+    "sec-ch-ua": "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"",
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": "\"Windows\"",
+    "cache-control": "no-cache",
+    "pragma": "no-cache"
+]
+
 @Field static ArrayList CA_TEMP_RANGE = ["17", "17.5", "18", "18.5", "19", "19.5", "20", "20.5", "21", "21.5", "22", "22.5", "23", "23.5", "24", "24.5", "25", "25.5", "26", "26.5", "27"]
 
 definition(
@@ -75,6 +79,23 @@ definition(
         iconX2Url: ""
 )
 
+// NEW: Generate unique but consistent deviceId
+def generateDeviceId() {
+    if (!state.deviceId) {
+        def seed = "${location.hub.id}-${user_name}-hubitat"
+        def hash = MessageDigest.getInstance("MD5").digest(seed.bytes)
+        // Convertir en hexadécimal au lieu de Base64 (compatible Hubitat)
+        state.deviceId = hash.encodeHex().toString().take(64)
+    }
+    return state.deviceId
+}
+
+// NEW: Rate limiting delay to avoid Cloudflare detection
+def rateLimitDelay() {
+    def delay = 1000 + new Random().nextInt(2000) // 1-3 seconds random
+    pauseExecution(delay)
+}
+
 preferences {
     page(name: "mainPage")
     page(name: "accountInfoPage")
@@ -87,6 +108,7 @@ def mainPage()
     dynamicPage(name: "mainPage", title: "Hyundai Bluelink App", install: true, uninstall: true) {
         section(getFormat("title","About Hyundai Bluelink Application")) {
             paragraph "This application and the corresponding driver are used to access the Canadian Hyundai Bluelink web services with Hubitat Elevation. Follow the steps below to configure the application."
+            paragraph "<b>Version ${appVersion()}</b> - Cloudflare bypass enabled"
         }
         section(getFormat("header-blue-grad","   1.  Set Bluelink Account Information")) {
         }
@@ -170,16 +192,13 @@ def getProfileLink() {
     }
 }
 
-////////
-// Debug Stuff
-///////
 def getDebugLink() {
     section{
         href(
                 name       : 'debugHref',
                 title      : 'Debug buttons',
                 page       : 'debugPage',
-                description: 'Access debug buttons (refresh token, initialize)'
+                description: 'Access debug buttons (refresh token, initialize, clear cookies)'
         )
     }
 }
@@ -195,6 +214,9 @@ def debugPage() {
         section {
             input 'initialize', 'button', title: 'initialize', submitOnChange: true
         }
+        section {
+            input 'clearCookies', 'button', title: 'Clear Cookies & Session', submitOnChange: true
+        }
     }
 }
 
@@ -202,6 +224,7 @@ def appButtonHandler(btn) {
     switch (btn) {
         case 'discover':
             authorize()
+            rateLimitDelay()
             getVehicles()
             break
         case 'refreshToken':
@@ -210,6 +233,11 @@ def appButtonHandler(btn) {
         case 'initialize':
             initialize()
             break
+        case 'clearCookies':
+            state.sessionCookies = null
+            state.deviceId = null
+            log("Cookies and session cleared", "info")
+            break
         default:
             log("Invalid Button In Handler", "error")
     }
@@ -217,7 +245,7 @@ def appButtonHandler(btn) {
 
 void installed() {
     log("Installed with settings: ${settings}", "trace")
-    stay_logged_in = true // initialized to ensure token refresh happens with default setting
+    stay_logged_in = true
     initialize()
 }
 
@@ -239,35 +267,45 @@ void initialize() {
     log("Initialize called", "trace")
     setVersion()
     unschedule()
+    generateDeviceId()
+    
     if(stay_logged_in && (state.refresh_token != null)) {
         refreshToken()
     }
 }
 
 void authorize() {
-    log("authorize called", "info")
+    log("authorize called - Using Cloudflare bypass", "info")
     
-    // make sure there are no outstanding token refreshes scheduled
     unschedule()
+    
     API_Headers = [
         "content-type": "application/json;charset=UTF-8",
-        "accept": "application/json",
-        "accept-encoding": "gzip",
-        "accept-language": "en-US,en;q=0.9",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.142 Safari/537.36",
+        "accept": "application/json, text/plain, */*",
+        "accept-encoding": "gzip, deflate, br",
+        "accept-language": "en-US,en;q=0.9,fr-CA;q=0.8,fr;q=0.7",
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "Host": "mybluelink.ca",
         "Connection": "keep-alive",
-        "Deviceid": "TW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNrbykgQ2hyb21lLzEzOC4wLjAuMCBTYWZhcmkvNTM3LjM2IEVkZy8xMzguMC4wLjArV2luMzIrMTIzNCsxMjM0",
+        "Deviceid": generateDeviceId(),
         "origin": "https://mybluelink.ca",
         "referer": "https://mybluelink.ca/login",
         "from": "CWP",
         "language": "0",
-        "offset": "0",
+        "offset": "-5",
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin"
+        "sec-fetch-site": "same-origin",
+        "sec-ch-ua": "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "cache-control": "no-cache",
+        "pragma": "no-cache"
     ]
-    log("API_Headers1 ${API_Headers}", "info")
+    
+    if (state.sessionCookies) {
+        API_Headers.put("Cookie", state.sessionCookies)
+    }
 
     def body = [
         "loginId": user_name,
@@ -276,7 +314,7 @@ void authorize() {
     def url = API_URL + "v2/login" 
     API_Headers.referer = "https://mybluelink.ca/login"
     
-    int valTimeout = 60 // authorize n’a pas besoin de refresh long
+    int valTimeout = 90
     def params = [
         uri: url,
         headers: API_Headers,
@@ -285,22 +323,30 @@ void authorize() {
         body: body,
         ignoreSSLIssues: true
     ]  
-    log("params1 ${params}", "info")
+    
+    log("Attempting login with Cloudflare bypass...", "info")
    
     try {
         httpPost(params) { response ->
-            // Appel ta fonction de traitement
             authResponse(response)
 
-            // Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (authorize): ${cookies}"
+                log.debug "✓ Session cookies saved"
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
-        log("Login failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
+        if (e.getStatusCode() == 429) {
+            log("RATE LIMIT ERROR: You are being rate limited by Cloudflare. Wait 15-30 minutes before retrying.", "error")
+            log("TIP: Try accessing https://mybluelink.ca/login in a browser first to establish cookies.", "warn")
+        } else if (e.getStatusCode() == 403) {
+            log("ACCESS DENIED: Cloudflare is blocking your requests. You may need to clear cookies or wait.", "error")
+        } else {
+            log("Login failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
+        }
+    } catch (java.net.SocketTimeoutException e) {
+        log("Connection timeout - Cloudflare may be challenging the request", "error")
     }
 }
 
@@ -313,8 +359,8 @@ void refreshToken(Boolean refresh=false) {
         ]
         def url = API_URL + "lgn"
         API_Headers.referer = "https://mybluelink.ca/login"
+        API_Headers.put("Deviceid", generateDeviceId())
 
-        // 👉 Ajouter les cookies si déjà stockés
         if (state.sessionCookies) {
             API_Headers.put("Cookie", state.sessionCookies)
         }
@@ -324,28 +370,35 @@ void refreshToken(Boolean refresh=false) {
             headers: API_Headers,
             requestContentType: "application/json",
             body: body,
-            ignoreSSLIssues: true
+            ignoreSSLIssues: true,
+            timeout: 90
         ]  
+
+        rateLimitDelay()
 
         try {
             httpPost(params) { response ->
-                // Appel ta fonction de traitement
                 authResponse(response)
 
-                // 👉 Capture cookies pour réutilisation
                 def cookies = response.headers['Set-Cookie']
                 if (cookies) {
                     state.sessionCookies = cookies
-                    log.debug "Cookies sauvegardés (refreshToken): ${cookies}"
+                    log.debug "✓ Cookies refreshed"
                 }
             }
         } catch (java.net.SocketTimeoutException e) {
             if (!refresh) {
-                log("Socket timeout exception, will retry refresh token", "info")
+                log("Socket timeout, will retry refresh token", "info")
+                pauseExecution(5000)
                 refreshToken(true)
             }
         } catch (groovyx.net.http.HttpResponseException e) {
-            log("Login failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
+            if (e.getStatusCode() == 429) {
+                log("RATE LIMITED during token refresh - waiting before retry", "warn")
+                pauseExecution(10000)
+            } else {
+                log("Token refresh failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
+            }
         }
     } else {
         log("Failed to refresh token, refresh token null.", "error")
@@ -361,31 +414,25 @@ def authResponse(response) {
     log("reCode: ${reCode}", "debug")
     log("reJson: ${reJson}", "debug")
 
-    // 👉 Capture cookies dès la réponse d'authentification
     def cookies = response.headers['Set-Cookie']
     if (cookies) {
         state.sessionCookies = cookies
-        log.debug "Cookies sauvegardés (authResponse): ${cookies}"
+        log.debug "✓ Auth cookies saved"
     }
 
     if (reJson.containsKey('error')) {
         log("reJsonerror: ${reJson.error}", "debug")
         if (reJson.error.containsKey('errorCode')) {
             log("reJsonerrorCode: ${reJson.error.errorCode}", "debug")
-            if (reJson.error.errorCode == "7403" || reJson.error.errorCode == "7901") {
-                // authorize() // relancer si nécessaire
-            }
         }
     }
 
     if (reCode == 200) {
         state.access_token = reJson.result.token.accessToken
         state.refresh_token = reJson.result.token.refreshToken
-        def expireIn = reJson.result.token.expireIn
         Integer expireTime = reJson.result.token.expireIn - 180
-        log("Bluelink token refreshed successfully, Next Scheduled in: ${expireTime} sec", "debug")
+        log("✓ Token refreshed successfully, Next in: ${expireTime} sec", "info")
 
-        // Planifier le prochain refresh
         if (stay_logged_in) {
             runIn(expireTime, refreshToken)
         }
@@ -397,12 +444,14 @@ def authResponse(response) {
 def getVehicles(Boolean retry=false) {
     log("getVehicles called", "trace")
 
+    rateLimitDelay()
+
     def uri = API_URL + "vhcllst"
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
     headers.put('accessToken', state.access_token)
+    headers.put("Deviceid", generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
@@ -411,9 +460,9 @@ def getVehicles(Boolean retry=false) {
         uri: uri,
         headers: headers,
         requestContentType: "application/json",
-        ignoreSSLIssues: true
+        ignoreSSLIssues: true,
+        timeout: 90
     ]
-    log("getVehicles ${params}", "debug")
 
     LinkedHashMap reJson = []
     try {
@@ -423,20 +472,24 @@ def getVehicles(Boolean retry=false) {
             log("reCodegetVeh: ${reCode}", "debug")
             log("reJsongetVeh: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (getVehicles): ${cookies}"
+                log.debug "✓ Cookies saved (getVehicles)"
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
-        if (e.getStatusCode() == 401 && !retry) {
+        if (e.getStatusCode() == 429) {
+            log("RATE LIMITED: Wait 15-30 minutes before trying again", "error")
+            return
+        } else if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()
+            pauseExecution(3000)
             getVehicles(true)
+        } else {
+            log("getVehicles failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
         }
-        log("getVehicles failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
         return
     }
 
@@ -447,7 +500,6 @@ def getVehicles(Boolean retry=false) {
             log("Found vehicle: ${vehicle.nickName} with VIN: ${vehicle.vin}", "info")
             def newDevice = CreateChildDriver(vehicle.nickName, vehicle.vin)
             if (newDevice != null) {
-                // populate attributes
                 state.vehicleId = vehicle.vehicleId
                 sendEvent(newDevice, [name: "NickName", value: vehicle.nickName])
                 sendEvent(newDevice, [name: "VIN", value: vehicle.vin])
@@ -468,37 +520,6 @@ def getVehicles(Boolean retry=false) {
     }
 }
 
-
-def getEvStatus(device) {
-    def uri = "https://mybluelink.ca/spa/vehicles/${state.vehicleId}/status"
-    def headers = API_Headers
-    headers.put('accessToken', state.access_token)
-    headers.put('vehicleId', state.vehicleId)
-    headers.put('referer', 'https://mybluelink.ca/cpw/overview')
-    headers.put('origin', 'https://mybluelink.ca')
-
-    def params = [ uri: uri, headers: headers, timeout: 60 ]
-    log.debug "Calling EV status endpoint: ${params}"
-
-    try {
-        httpGet(params) { response ->
-            def reJson = response.getData()
-            log.debug "EV Status JSON: ${groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(reJson))}"
-
-            def evStatus = reJson?.resMsg?.status?.evStatus
-            if (evStatus) {
-                sendEvent(device, [name: "BatteryInCharge", value: evStatus.batteryCharge ? "On" : "Off"])
-                sendEvent(device, [name: "BatteryPercent", value: evStatus.batteryStatus])
-                sendEvent(device, [name: "BatteryPlugin", value: evStatus.batteryPlugin ? "Plugged" : "Unplugged"])
-            }
-        }
-    } catch (Exception e) {
-        log.error "getEvStatus failed: ${e}"
-    }
-}
-
-
-
 void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh = false, Boolean retry=false)
 {
     log("getVehicleStatus() called with forceRefresh=${forceRefresh}", "trace")
@@ -506,16 +527,17 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
         authorize()
     }
     
+    rateLimitDelay()
+    
     if (forceRefresh) {
         log.info "Force refresh requested - will ping vehicle then read cache"
         
-        // ÉTAPE 1 : Ping la voiture pour forcer une mise à jour
         def pingUri = API_URL + "rltmvhclsts"
         def pingHeaders = [
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.1) Gecko/20100101 Firefox/141.1",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "content-type": "application/json",
             "accept": "application/json",
-            "accept-encoding": "gzip",
+            "accept-encoding": "gzip, deflate, br",
             "host": "mybluelink.ca",
             "client_id": "HATAHSPACA0232141ED9722C67715A0B",
             "client_secret": "CLISCR01AHSPA",
@@ -523,33 +545,46 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
             "language": "0",
             "offset": "-5",
             "accessToken": state.access_token,
-            "vehicleId": state.vehicleId
+            "vehicleId": state.vehicleId,
+            "Deviceid": generateDeviceId()
         ]
+        
+        if (state.sessionCookies) {
+            pingHeaders.put("Cookie", state.sessionCookies)
+        }
         
         try {
             def pingParams = [ uri: pingUri, headers: pingHeaders, timeout: 90 ]
-            log.info "Pinging vehicle to force cache update (may take 30-60 seconds)..."
+            log.info "Pinging vehicle (may take 30-60 seconds)..."
+            
+            rateLimitDelay()
             
             httpPost(pingParams) { response ->
-                log.info "Vehicle pinged successfully - cache will be updated"
+                log.info "✓ Vehicle pinged successfully"
+                def cookies = response.headers['Set-Cookie']
+                if (cookies) {
+                    state.sessionCookies = cookies
+                }
             }
             
-            // Attendre que le cache soit mis à jour
-            pauseExecution(5000) // 5 secondes pour que le serveur mette à jour le cache
+            pauseExecution(5000)
             
-        } catch (Exception e) {
-            log.warn "Vehicle ping failed (but will try cache anyway): ${e.message}"
+        } catch (groovyx.net.http.HttpResponseException e) {
+            if (e.getStatusCode() == 429) {
+                log.error "RATE LIMITED during vehicle ping"
+                return
+            }
+            log.warn "Vehicle ping failed: ${e.message}"
         }
     }
     
-    // ÉTAPE 2 : Toujours lire depuis le cache (qui contient evStatus)
     def uri = API_URL + "lstvhclsts"
     
     def headers = [
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.1) Gecko/20100101 Firefox/141.1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "content-type": "application/json",
         "accept": "application/json",
-        "accept-encoding": "gzip",
+        "accept-encoding": "gzip, deflate, br",
         "host": "mybluelink.ca",
         "client_id": "HATAHSPACA0232141ED9722C67715A0B",
         "client_secret": "CLISCR01AHSPA",
@@ -557,13 +592,20 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
         "language": "0",
         "offset": "-5",
         "accessToken": state.access_token,
-        "vehicleId": state.vehicleId
+        "vehicleId": state.vehicleId,
+        "Deviceid": generateDeviceId()
     ]
+    
+    if (state.sessionCookies) {
+        headers.put("Cookie", state.sessionCookies)
+    }
     
     int valTimeout = 60
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
     
-    log.debug "Reading vehicle status from cache (lstvhclsts)"
+    log.debug "Reading vehicle status from cache"
+    
+    rateLimitDelay()
     
     LinkedHashMap reJson = []
     try
@@ -571,72 +613,67 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
         httpPost(params) { response ->
             def reCode = response.getStatus()
             reJson = response.getData()
+            
+            def cookies = response.headers['Set-Cookie']
+            if (cookies) {
+                state.sessionCookies = cookies
+            }
+            
             log.debug "reCode: ${reCode}"
             
             if (reJson?.result?.status?.evStatus) {
                 log.info "✓ evStatus found in cached data"
-                
-                // Afficher l'âge des données
                 def lastUpdate = reJson.result.status.lastStatusDate
-                log.info "Data age: last updated by vehicle at ${lastUpdate}"
+                log.info "Data age: ${lastUpdate}"
             }
         }
         
-        // Update relevant device attributes
         sendEvent(device, [name: 'Engine', value: reJson.result.status.engine ? 'On' : 'Off'])
         sendEvent(device, [name: 'DoorLocks', value: reJson.result.status.doorLock ? 'Locked' : 'Unlocked'])
         sendEvent(device, [name: 'Trunk', value: reJson.result.status.trunkOpen ? 'Open' : 'Closed'])
         sendEvent(device, [name: "LastRefreshTime", value: Date.parse('yyyyMMddHHmmSS', reJson.result.status.lastStatusDate).format('E MMM dd HH:mm:ss z yyyy')])
         
-        // Batterie 12V
         def batSoc = reJson?.result?.status?.battery?.batSoc
         if (batSoc != null) {
             sendEvent(device, [name: 'BatteryLevel', value: batSoc])
         }
         
-        // Données EV depuis evStatus
         def evStatus = reJson?.result?.status?.evStatus
         if (evStatus != null) {
             log.info "Processing evStatus data"
             
-            // Statut de charge
             def batteryCharge = evStatus?.batteryCharge
             if (batteryCharge != null) {
                 sendEvent(device, [name : 'BatteryInCharge', value: batteryCharge ? 'On' : 'Off'])
                 log.info "✓ BatteryInCharge: ${batteryCharge ? 'On' : 'Off'}"
             }
             
-            // Pourcentage batterie EV
             def batteryStatus = evStatus?.batteryStatus
             if (batteryStatus != null) {
                 sendEvent(device, [name : 'BatteryPercent', value: batteryStatus])
                 log.info "✓ BatteryPercent: ${batteryStatus}%"
             }
             
-		    // Autonomie EV (c’est ici qu’il faut l’ajouter)
-    		def evRange = evStatus?.drvDistance?.getAt(0)?.rangeByFuel?.evModeRange?.value
-    		if (evRange != null) {
-        		sendEvent(device, [name: 'DCRange', value: evRange])
-        		log.info "✓ DCRange (EV range): ${evRange}"
-    		}
+            def evRange = evStatus?.drvDistance?.getAt(0)?.rangeByFuel?.evModeRange?.value
+            if (evRange != null) {
+                sendEvent(device, [name: 'DCRange', value: evRange])
+                log.info "✓ DCRange: ${evRange}"
+            }
             
-            // Branché ou non
             def batteryPlugin = evStatus?.batteryPlugin
             if (batteryPlugin != null) {
                 def plugStatus = ["Not Connected", "Slow Charge", "Fast Charge", "Portable"][batteryPlugin] ?: "Unknown"
                 log.info "Battery Plugin: ${plugStatus} (${batteryPlugin})"
             }
             
-            // Temps de charge restant
             def remainTimeValue = evStatus?.remainTime2?.etc3?.value
             if (remainTimeValue != null && remainTimeValue > 0) {
                 int hours = remainTimeValue / 60
                 int minutes = remainTimeValue % 60
                 def timeToDisplay = String.format("%02d:%02d", hours, minutes)
                 sendEvent(device, [name: 'BatteryTimeToCharge', value: timeToDisplay])
-                log.info "✓ BatteryTimeToCharge: ${timeToDisplay} (${remainTimeValue} min)"
+                log.info "✓ BatteryTimeToCharge: ${timeToDisplay}"
             } else {
-                log.debug "Not charging (remainTime = ${remainTimeValue})"
                 sendEvent(device, [name: 'BatteryTimeToCharge', value: 'N/A'])
             }
         } else {
@@ -648,7 +685,7 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
     catch (groovyx.net.http.HttpResponseException e)
     {
         if (e.getStatusCode() == 429) {
-            log.error "Rate limited (429)"
+            log.error "Rate limited (429) - Wait 15-30 minutes"
             return
         }
         else if (e.getStatusCode() == 401 && !retry)
@@ -664,25 +701,19 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
     catch (Exception e)
     {
         log.error "Unexpected error: ${e.message}"
-        e.printStackTrace()
     }
     
-    pauseExecution(1000)
+    pauseExecution(2000)
     try { getNextService(device) } catch (Exception e) { log.warn "getNextService failed: ${e.message}" }
     
-    pauseExecution(1000)
+    pauseExecution(2000)
     try { ClimFavoritesDisplay(device) } catch (Exception e) { log.warn "ClimFavoritesDisplay failed: ${e.message}" }
-}
-
-// Garder getForceVehicleStatus comme wrapper pour compatibilité
-void getForceVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean refresh = false, Boolean retry=false)
-{
-    log("getForceVehicleStatus() - calling getVehicleStatus with forceRefresh=true", "trace")
-    getVehicleStatus(device, true, retry)
 }
 
 void getNextService(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean refresh=false) {
     log("getNextService() called", "trace")
+
+    rateLimitDelay()
 
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
@@ -690,13 +721,13 @@ void getNextService(com.hubitat.app.DeviceWrapper device, Boolean retry=false, B
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
     def uri = API_URL + "nxtsvc"
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
 
@@ -708,18 +739,33 @@ void getNextService(com.hubitat.app.DeviceWrapper device, Boolean retry=false, B
             log("reCode NextServ: ${reCode}", "debug")
             log("reJson NextServ: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (getNextService): ${cookies}"
             }
         }
 
-        // Mettre à jour l’attribut Odometer
-        sendEvent(device, [name: 'Odometer', value: reJson.result.maintenanceInfo.currentOdometer])
+        // Vérifier s'il y a une erreur dans la réponse
+        if (reJson.containsKey('error')) {
+            log("getNextService API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+            if (reJson.error.errorCode == "7602" && !retry) {
+                log('Access token deleted, will refresh and retry.', 'warn')
+                refreshToken()
+                pauseExecution(2000)
+                getNextService(device, true, refresh)
+            }
+            return
+        }
+
+        if (reJson?.result?.maintenanceInfo?.currentOdometer) {
+            sendEvent(device, [name: 'Odometer', value: reJson.result.maintenanceInfo.currentOdometer])
+        }
 
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during getNextService"
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()
@@ -736,6 +782,8 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
         authorize()
     }
 
+    rateLimitDelay()
+
     def uri = API_URL + "fndmcr"
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
@@ -743,8 +791,8 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('pAuth', getPinToken(device))
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
@@ -758,7 +806,6 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
         ignoreSSLIssues: true,
         timeout: 120
     ]  
-    log("getLocation params ${params}", "debug")
 
     LinkedHashMap reJson = []
     try {
@@ -768,11 +815,9 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
             log("reCode getLocation: ${reCode}", "debug")
             log("reJson getLocation: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (getLocation): ${cookies}"
             }
 
             if (reCode == 200) {
@@ -788,6 +833,11 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during getLocation"
+            sendEventHelper(device, "Location", false)
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()
@@ -802,19 +852,20 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
 def getPinToken(com.hubitat.app.DeviceWrapper device, Boolean retry=false) {
     log("getPinToken() called", "trace")
 
+    rateLimitDelay()
+
     def uri = API_URL + "vrfypin"
     API_Headers.referer = "https://mybluelink.ca/remote/climate"
     def headers = API_Headers
     headers.put('accessToken', state.access_token)
     headers.put('vehicleId', state.vehicleId)
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
     def thePin = [pin: bluelink_pin]
-    log("getPinToken thePin ${thePin}", "debug")
     
     def params = [
         uri: uri,
@@ -823,7 +874,6 @@ def getPinToken(com.hubitat.app.DeviceWrapper device, Boolean retry=false) {
         body: thePin,
         ignoreSSLIssues: true
     ]  
-    log("getPinToken params ${params}", "debug")
 
     LinkedHashMap reJson = []
     try {
@@ -833,11 +883,9 @@ def getPinToken(com.hubitat.app.DeviceWrapper device, Boolean retry=false) {
             log("reCode getPinToken: ${reCode}", "debug")
             log("reJson getPinToken: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (getPinToken): ${cookies}"
             }
 
             if (reCode == 200) {
@@ -845,6 +893,10 @@ def getPinToken(com.hubitat.app.DeviceWrapper device, Boolean retry=false) {
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during getPinToken"
+            return null
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()
@@ -877,13 +929,15 @@ void Unlock(com.hubitat.app.DeviceWrapper device)
         sendEventHelper(device, "Unlock", false)
     } else
     {
-        log("Unlock call made to car -- can take some time to unock", "info")
+        log("Unlock call made to car -- can take some time to unlock", "info")
         sendEventHelper(device, "Unlock", true)
     }
 }
 
 void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean refresh=false) {
     log("ClimFavoritesDisplay() called", "trace")
+
+    rateLimitDelay()
 
     def uri = API_URL + "gtfvsttng"
     API_Headers.referer = "https://mybluelink.ca/charge"
@@ -892,15 +946,14 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=fa
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
     def params = [ uri: uri, headers: headers, timeout: valTimeout ]
-    log("ClimFavoritesDisplay params ${params}", "debug")
 
     LinkedHashMap reJson = []
 
@@ -911,17 +964,28 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=fa
             log("ClimFavoritesDisplay reCode: ${reCode}", "debug")
             log("ClimFavoritesDisplay reJson: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (ClimFavoritesDisplay): ${cookies}"
             }
 
             if (reCode == 200) {
                 log("ClimFavoritesDisplay successful.","info")
             }
-            if (reJson.result[0] != null) {
+            
+            // Vérifier s'il y a une erreur dans la réponse
+            if (reJson.containsKey('error')) {
+                log("ClimFavoritesDisplay API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                if (reJson.error.errorCode == "7602" && !retry) {
+                    log('Access token deleted, will refresh and retry.', 'warn')
+                    refreshToken()
+                    pauseExecution(2000)
+                    ClimFavoritesDisplay(device, true, refresh)
+                }
+                return
+            }
+            
+            if (reJson?.result && reJson.result[0] != null) {
                 def tempHex1 = reJson.result[0].airTemp.value
                 def tempIndex1 = tempHex1.substring(0,2)
                 int index1 = Integer.parseInt(tempIndex1, 16) - 6
@@ -932,7 +996,7 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=fa
                 sendEvent(device, [name: 'Fav1Temp', value: temperature1])                
                 sendEvent(device, [name: 'Fav1Heating', value: reJson.result[0].heating1])
             }
-            if (reJson.result[1] != null) {
+            if (reJson?.result && reJson.result[1] != null) {
                 def tempHex2 = reJson.result[1].airTemp.value
                 def tempIndex2 = tempHex2.substring(0,2)
                 int index2 = Integer.parseInt(tempIndex2, 16) - 6
@@ -943,7 +1007,7 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=fa
                 sendEvent(device, [name: 'Fav2Temp', value: temperature2])                
                 sendEvent(device, [name: 'Fav2Heating', value: reJson.result[1].heating1])                
             }
-            if (reJson.result[2] != null) {
+            if (reJson?.result && reJson.result[2] != null) {
                 def tempHex3 = reJson.result[2].airTemp.value
                 def tempIndex3 = tempHex3.substring(0,2)
                 int index3 = Integer.parseInt(tempIndex3, 16) - 6
@@ -956,6 +1020,10 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=fa
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during ClimFavoritesDisplay"
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()          
@@ -972,6 +1040,8 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
         authorize()
     }
 
+    rateLimitDelay()
+
     def uri = API_URL + "evc/rfon"
     API_Headers.referer = "https://mybluelink.ca/remote/climate"
     def headers = API_Headers
@@ -980,13 +1050,13 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
 
     def FavTemp = ""
     def FavDefrost = ""
@@ -1026,8 +1096,6 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
         "pin": bluelink_pin
     ]
 
-    log("ClimFavoritesStart hvacInfo ${hvacInfo}", "debug")
-
     def params = [
         uri: uri,
         headers: headers,
@@ -1036,8 +1104,6 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
         ignoreSSLIssues: true,
         timeout: valTimeout
     ]  
-    
-    log("ClimFavoritesStart params ${params}", "debug")
 
     LinkedHashMap reJson = []
 
@@ -1049,11 +1115,9 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
             log("ClimFavoritesStart reCode: ${reCode}", "debug")
             log("ClimFavoritesStart reJson: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (ClimFavoritesStart): ${cookies}"
             }
 
             if (reCode == 200) {
@@ -1064,6 +1128,11 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during ClimFavoritesStart"
+            sendEventHelper(device, "ClimFavoritesStart", false)
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()          
@@ -1075,11 +1144,12 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
 
 void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, pcmdHeating, Boolean retry=false, Boolean refresh=false) {
     log("ClimManual() called", "trace")
-    log("ClimManual() pstrCmdDefrost ${pstrCmdDefrost}", "trace")
 
     if (!stay_logged_in) {
         authorize()
     }
+
+    rateLimitDelay()
 
     def uri = API_URL + "evc/rfon"
     API_Headers.referer = "https://mybluelink.ca/remote/climate"
@@ -1089,13 +1159,13 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
 
     def temperatureIndex = CA_TEMP_RANGE.indexOf(pcmdTemp) + 6
     def indexHex = Integer.toHexString(temperatureIndex).toUpperCase()
@@ -1107,10 +1177,8 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
     def boolean pcmdDefrost
     if (pstrCmdDefrost == "false") {
         pcmdDefrost = false
-        log("ClimManual1() called", "trace")
     } else {
         pcmdDefrost = true
-        log("ClimManual2() called", "trace")
     }
 
     if (pcmdHeating == "false") {
@@ -1133,8 +1201,6 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
         "pin": bluelink_pin
     ]
 
-    log("ClimManual hvacInfo ${hvacInfo}", "debug")
-
     def params = [
         uri: uri,
         headers: headers,
@@ -1143,7 +1209,6 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
         ignoreSSLIssues: true,
         timeout: valTimeout
     ]   
-    log("ClimManual params ${params}", "debug")
 
     LinkedHashMap reJson = []
 
@@ -1155,11 +1220,9 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
             log("ClimManual reCode: ${reCode}", "debug")
             log("ClimManual reJson: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (ClimManual): ${cookies}"
             }
 
             if (reCode == 200) {
@@ -1170,6 +1233,11 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during ClimManual"
+            sendEventHelper(device, "ClimManual", false)
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()          
@@ -1186,6 +1254,8 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
         authorize()
     }
 
+    rateLimitDelay()
+
     def uri = API_URL + "evc/rfoff"
     API_Headers.referer = "https://mybluelink.ca/remote/climate"
     def headers = API_Headers
@@ -1194,13 +1264,13 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
     def thePin = ["pin": bluelink_pin]
 
     def params = [
@@ -1211,8 +1281,6 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
         ignoreSSLIssues: true,
         timeout: valTimeout
     ]  
-    
-    log("ClimStop params ${params}", "debug")
 
     LinkedHashMap reJson = []
 
@@ -1223,11 +1291,9 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
             log("ClimStop reCode: ${reCode}", "debug")
             log("ClimStop reJson: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (ClimStop): ${cookies}"
             }
 
             if (reCode == 200) {
@@ -1238,6 +1304,11 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during ClimStop"
+            sendEventHelper(device, "ClimStop", false)
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()          
@@ -1254,6 +1325,8 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
         authorize()
     }
 
+    rateLimitDelay()
+
     def uri = API_URL + "evc/rcstrt"
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
@@ -1262,13 +1335,13 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
     def thePin = ["pin": bluelink_pin]
 
     def params = [
@@ -1279,8 +1352,6 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
         ignoreSSLIssues: true,
         timeout: valTimeout
     ]  
-    
-    log("StartCharge params ${params}", "debug")
 
     LinkedHashMap reJson = []
 
@@ -1291,11 +1362,9 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
             log("StartCharge reCode: ${reCode}", "debug")
             log("StartCharge reJson: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (StartCharge): ${cookies}"
             }
 
             if (reCode == 200) {
@@ -1306,6 +1375,11 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during StartCharge"
+            sendEventHelper(device, "StartCharge", false)
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()          
@@ -1322,6 +1396,8 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
         authorize()
     }
 
+    rateLimitDelay()
+
     def uri = API_URL + "evc/rcstp"
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
@@ -1330,13 +1406,13 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
     headers.put('pAuth', getPinToken(device))    
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
     def thePin = ["pin": bluelink_pin]
 
     def params = [
@@ -1347,8 +1423,6 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
         ignoreSSLIssues: true,
         timeout: valTimeout
     ]  
-    
-    log("StopCharge params ${params}", "debug")
 
     LinkedHashMap reJson = []
 
@@ -1359,11 +1433,9 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
             log("StopCharge reCode: ${reCode}", "debug")
             log("StopCharge reJson: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (StopCharge): ${cookies}"
             }
 
             if (reCode == 200) {
@@ -1374,6 +1446,11 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during StopCharge"
+            sendEventHelper(device, "StopCharge", false)
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()          
@@ -1383,74 +1460,19 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
     }
 }
 
-void transactionStatus(com.hubitat.app.DeviceWrapper device, pAuth, Boolean retry=false, Boolean refresh=false) {
-    log("transactionStatus() called", "trace")
-    unschedule()
-
-    def uri = API_URL + "rmtsts"
-    API_Headers.referer = "https://mybluelink.ca/remote/climate"
-    def headers = API_Headers
-    headers.put('accessToken', state.access_token)
-    headers.put('vehicleId', state.vehicleId)
-    headers.put('pAuth', getPinToken(device))
-    headers.put('transactionId', state.transactionId.elements[0].name)
-    headers.put('offset', '-5')
-    headers.put('REFRESH', refresh.toString())
-
-    // 👉 Ajouter les cookies si déjà stockés
-    if (state.sessionCookies) {
-        headers.put("Cookie", state.sessionCookies)
-    }
-
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
-    sendEventHelper(device, "transactionStatus", false)
-
-    def params = [ uri: uri, headers: headers, timeout: valTimeout ]    
-    log("transactionStatus params ${params}", "debug")
-
-    try {
-        httpPost(params) { response ->
-            def reCode = response.getStatus()
-            def reJson = response.getData()
-            log("transactionStatus reCode: ${reCode}", "debug")
-            log("transactionStatus reJson: ${reJson}", "debug")
-
-            // 👉 Capture cookies pour réutilisation
-            def cookies = response.headers['Set-Cookie']
-            if (cookies) {
-                state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (transactionStatus): ${cookies}"
-            }
-
-            if (reCode == 200) {
-                if (reJson.result.transaction.apiStatusCode == "null") {
-                    runIn(6, callTransactionStatus)
-                } else {
-                    log("transactionStatus successful.","info")
-                    sendEventHelper(device, "transactionStatus", true)
-                }
-            }
-        }
-    } catch (groovyx.net.http.HttpResponseException e) {
-        if (e.getStatusCode() == 401 && !retry) {
-            log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            transactionStatus(device, pAuth, true, refresh)
-        }
-        log("transactionStatus failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
-    }
-}
-
 void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
 {
     log("getChargeLimits() called", "trace")
+
+    rateLimitDelay()
+
     def uri = API_URL + "evc/selsoc"
     
     def headers = [
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:141.1) Gecko/20100101 Firefox/141.1",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         "content-type": "application/json",
         "accept": "application/json",
-        "accept-encoding": "gzip",
+        "accept-encoding": "gzip, deflate, br",
         "host": "mybluelink.ca",
         "client_id": "HATAHSPACA0232141ED9722C67715A0B",
         "client_secret": "CLISCR01AHSPA",
@@ -1458,8 +1480,13 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
         "language": "0",
         "offset": "-5",
         "accessToken": state.access_token,
-        "vehicleId": state.vehicleId
+        "vehicleId": state.vehicleId,
+        "Deviceid": generateDeviceId()
     ]
+
+    if (state.sessionCookies) {
+        headers.put("Cookie", state.sessionCookies)
+    }
     
     def params = [ uri: uri, headers: headers, timeout: 60 ]
     
@@ -1471,6 +1498,11 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
             reJson = response.getData()
             log.debug "getChargeLimits reCode: ${reCode}"
             log.debug "getChargeLimits reJson: ${reJson}"
+
+            def cookies = response.headers['Set-Cookie']
+            if (cookies) {
+                state.sessionCookies = cookies
+            }
         }
         
         if (reJson?.result && reJson.result.size() >= 2) {
@@ -1478,12 +1510,15 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
             sendEvent(device, [name: 'ACLevel', value: reJson.result[1].level])
             sendEvent(device, [name: 'ACRange', value: reJson.result[1].dte.rangeByFuel.totalAvailableRange.value])
             
-            // NE PAS mettre à jour BatteryPercent ici - evStatus est plus précis
-            log.debug "Charge limits updated (BatteryPercent NOT updated - evStatus takes priority)"
+            log.debug "Charge limits updated"
         }
     }
     catch (groovyx.net.http.HttpResponseException e)
     {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during getChargeLimits"
+            return
+        }
         if (e.getStatusCode() == 401 && !retry)
         {
             log.warn 'Authorization token expired, will refresh and retry.'
@@ -1507,6 +1542,8 @@ void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLe
         authorize()
     }
 
+    rateLimitDelay()
+
     def uri = API_URL + "evc/setsoc"
     def headers = API_Headers
     headers.put('accessToken', state.access_token)
@@ -1514,17 +1551,16 @@ void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLe
     headers.put('pAuth', getPinToken(device))
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
 
-    // Ajuster les headers spécifiques
     API_Headers.referer = 'https://mybluelink.ca/remote/tsoc'
     API_Headers.from = 'SPA'
 
-    int valTimeout = refresh ? 240 : 60 // timeout in sec.
+    int valTimeout = refresh ? 240 : 60
     def theBody = [
         "pin": bluelink_pin,
         "tsoc": [
@@ -1540,7 +1576,6 @@ void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLe
         ignoreSSLIssues: true,
         timeout: 120
     ]  
-    log("setChargeLimits params ${params}", "debug")
 
     LinkedHashMap reJson = []
 
@@ -1551,115 +1586,22 @@ void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLe
             log("setChargeLimits reCode: ${reCode}", "debug")
             log("setChargeLimits reJson: ${reJson}", "debug")
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (setChargeLimits): ${cookies}"
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during setChargeLimits"
+            return
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()          
             setChargeLimits(device, pcmdACLevel, pcmdDCLevel, true, refresh)
         }
         log("setChargeLimits failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
-    }
-}
-
-// Fonction helper pour traiter les données EV
-void processEvData(device, data) {
-    if (!(data instanceof Map)) {
-        log.warn "processEvData: data is not a Map"
-        return
-    }
-    
-    log.debug "processEvData: data has keys: ${data.keySet()}"
-    
-    // --- Temps de charge restant ---
-    def remainTime2 = data?.remainTime2
-    if (remainTime2 instanceof Map) {
-        log.debug "remainTime2 is a Map with keys: ${remainTime2.keySet()}"
-        
-        // Logger tous les types de charge disponibles
-        ['atc', 'etc1', 'etc2', 'etc3'].each { chargeType ->
-            if (remainTime2[chargeType]) {
-                log.debug "  ${chargeType}: ${remainTime2[chargeType]}"
-            }
-        }
-    } else if (remainTime2 != null) {
-        log.debug "remainTime2 exists but is not a Map: ${remainTime2}"
-    } else {
-        log.debug "remainTime2 is null"
-    }
-    
-    def remainTimeValue = data?.remainTime2?.etc3?.value
-    
-    if (remainTimeValue != null) {
-        try {
-            def timeValue = remainTimeValue instanceof Number ? 
-                remainTimeValue.intValue() : 
-                remainTimeValue.toString().toInteger()
-            
-            int hours = timeValue / 60
-            int minutes = timeValue % 60
-            def timeToDisplay = String.format("%02d:%02d", hours, minutes)
-            sendEvent(device, [name: 'BatteryTimeToCharge', value: timeToDisplay])
-            log.info "✓ BatteryTimeToCharge: ${timeToDisplay} (${timeValue} min)"
-        } catch (Exception e) {
-            log.warn "Error converting remainTime: ${e.message}"
-            sendEvent(device, [name: 'BatteryTimeToCharge', value: 'N/A'])
-        }
-    } else {
-        log.warn "remainTime2.etc3.value not found"
-        
-        // Essayer d'autres types de charge
-        def alternateTime = data?.remainTime2?.atc?.value ?: 
-                           data?.remainTime2?.etc1?.value ?: 
-                           data?.remainTime2?.etc2?.value
-        
-        if (alternateTime != null) {
-            log.info "Using alternate charge time from: ${alternateTime}"
-            try {
-                def timeValue = alternateTime instanceof Number ? 
-                    alternateTime.intValue() : 
-                    alternateTime.toString().toInteger()
-                
-                int hours = timeValue / 60
-                int minutes = timeValue % 60
-                def timeToDisplay = String.format("%02d:%02d", hours, minutes)
-                sendEvent(device, [name: 'BatteryTimeToCharge', value: timeToDisplay])
-                log.info "✓ BatteryTimeToCharge (alternate): ${timeToDisplay}"
-            } catch (Exception e) {
-                log.warn "Error with alternate time: ${e.message}"
-                sendEvent(device, [name: 'BatteryTimeToCharge', value: 'N/A'])
-            }
-        } else {
-            sendEvent(device, [name: 'BatteryTimeToCharge', value: 'N/A'])
-        }
-    }
-    
-    // --- Statut de charge ---
-    def batteryCharge = data?.batteryCharge
-    log.debug "batteryCharge: ${batteryCharge}"
-    
-    if (batteryCharge != null) {
-        sendEvent(device, [name: 'BatteryInCharge', value: batteryCharge ? 'On' : 'Off'])
-        log.info "✓ BatteryInCharge: ${batteryCharge ? 'On' : 'Off'}"
-    } else {
-        // Fallback sur batteryPlugin
-        def batteryPlugin = data?.batteryPlugin
-        log.debug "batteryPlugin: ${batteryPlugin}"
-        
-        if (batteryPlugin != null) {
-            sendEvent(device, [name: 'BatteryInCharge', value: batteryPlugin ? 'Plugged' : 'Off'])
-            log.info "✓ BatteryInCharge (via plugin): ${batteryPlugin ? 'Plugged' : 'Off'}"
-        } else {
-            log.warn "Neither batteryCharge nor batteryPlugin found"
-            log.debug "Available keys in data: ${data.keySet()}"
-            sendEvent(device, [name: 'BatteryInCharge', value: 'N/A'])
-        }
     }
 }
 
@@ -1682,6 +1624,8 @@ private Boolean LockUnlockHelper(com.hubitat.app.DeviceWrapper device, String ur
         authorize()
     }
 
+    rateLimitDelay()
+
     def uri = API_URL + urlSuffix
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
@@ -1689,8 +1633,8 @@ private Boolean LockUnlockHelper(com.hubitat.app.DeviceWrapper device, String ur
     headers.put('vehicleId', state.vehicleId)  
     headers.put('pAuth', getPinToken(device))
     headers.put('offset', '-5')
+    headers.put('Deviceid', generateDeviceId())
 
-    // 👉 Ajouter les cookies si déjà stockés
     if (state.sessionCookies) {
         headers.put("Cookie", state.sessionCookies)
     }
@@ -1704,7 +1648,6 @@ private Boolean LockUnlockHelper(com.hubitat.app.DeviceWrapper device, String ur
         ignoreSSLIssues: true,
         timeout: 120
     ]  
-    log("LockUnlockHelper ${params}", "debug")
 
     int reCode = 0
 
@@ -1713,14 +1656,16 @@ private Boolean LockUnlockHelper(com.hubitat.app.DeviceWrapper device, String ur
             reCode = response.getStatus()
             state.transactionId = response.headers['transactionId']    
 
-            // 👉 Capture cookies pour réutilisation
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
                 state.sessionCookies = cookies
-                log.debug "Cookies sauvegardés (LockUnlockHelper): ${cookies}"
             }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
+        if (e.getStatusCode() == 429) {
+            log.error "Rate limited during Lock/Unlock"
+            return false
+        }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
             refreshToken()
@@ -1756,44 +1701,6 @@ private void listDiscoveredVehicles() {
     }
 }
 
-private LinkedHashMap<String, String> getDefaultHeaders(com.hubitat.app.DeviceWrapper device) {
-    log("getDefaultHeaders() called", "trace")
-
-    LinkedHashMap<String, String> theHeaders = [:]
-    try {
-        String theVIN       = device?.currentValue("VIN")
-        String regId        = device?.currentValue("RegId")
-        String generation   = device?.currentValue("vehicleGeneration")
-        String brand        = device?.currentValue("brandIndicator")
-
-        theHeaders = [
-            'access_token'       : state.access_token ?: "",
-            'client_id'          : client_id ?: "",
-            'language'           : '0',
-            'vin'                : theVIN ?: "",
-            'APPCLOUD-VIN'       : theVIN ?: "",
-            'username'           : user_name ?: "",
-            'registrationId'     : regId ?: "",
-            'gen'                : generation ?: "",
-            'to'                 : 'ISS',
-            'from'               : 'SPA',
-            'encryptFlag'        : 'false',
-            'bluelinkservicepin' : bluelink_pin ?: "",
-            'brandindicator'     : brand ?: ""
-        ]
-
-        // 👉 Ajouter les cookies si déjà stockés
-        if (state.sessionCookies) {
-            theHeaders.put("Cookie", state.sessionCookies)
-        }
-
-    } catch(Exception e) {
-        log("Unable to generate API headers - Did you fill in all required information?", "error")
-    }
-
-    return theHeaders
-}
-
 private com.hubitat.app.ChildDeviceWrapper CreateChildDriver(String name, String vin) {
     log("CreateChildDriver called", "trace")
 
@@ -1816,9 +1723,7 @@ private com.hubitat.app.ChildDeviceWrapper CreateChildDriver(String name, String
         log("${e.message} - You need to install the 'Canadian Hyundai Bluelink Driver'.", "error")
     }
     catch (IllegalArgumentException e) {
-        // Expected if the device ID already exists in Hubitat
         log("Child device already exists: ${vehicleNetId}. Ignored: ${e.message}", "warn")
-        // 👉 Optionnel : récupérer l’existant
         newDevice = getChildDevice(vehicleNetId)
     }
     catch (Exception e) {
@@ -1876,7 +1781,6 @@ def log(Object data, String type) {
     }
 }
 
-// concept stolen bptworld, who stole from @Stephack Code
 def getFormat(type, myText="") {
     if(type == "header-green") return "<div style='color:#ffffff; border-radius: 5px 5px 5px 5px; font-weight: bold; padding-left: 10px; background-color:#81BC00; border: 1px solid;box-shadow: 2px 3px #A9A9A9'>${myText}</div>"
     if(type == "header-light-grey") return "<div style='color:#000000; border-radius: 5px 5px 5px 5px; font-weight: bold; padding-left: 10px; background-color:#D8D8D8; border: 1px solid;box-shadow: 2px 3px #A9A9A9'>${myText}</div>"
