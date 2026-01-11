@@ -6,7 +6,7 @@
   "author": "Jean Bilodeau",
   "version": "1.2.6",
   "minimumHEVersion": "0.0",
-  "dateReleased": "2026-01-03",
+  "dateReleased": "2026-01-11",
   "apps": [
     {
       "id": "c31202b6-e8bf-4696-a1e1-f9332a3b84ea",
@@ -28,6 +28,7 @@
     }
   ]
 }
+
 
 
 
