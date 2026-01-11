@@ -1,16 +1,22 @@
 /**
- *  Hyundai Bluelink Application - CLOUDFLARE FIX
+ *  Hyundai Bluelink Application - CLOUDFLARE FIX v1.2.6
  *
  *  Author:         Tim Yuhl & Jean Bilodeau for Canadian version
- *  Modified:       2025-12-29 - Fixed Cloudflare Error 429
+ *  Modified:       2026-01-11 - Fixed token refresh order in all commands
  *
- *  Changes in v1.2.4:
- *  - Updated User-Agent to Chrome 131 (was Chrome 75)
- *  - Added sec-ch-ua headers for Cloudflare compatibility
- *  - Dynamic DeviceId generation (was static)
- *  - Rate limiting delays between requests
- *  - Improved cookie management
- *  - Better error 429 handling
+ *  Changes in v1.2.6:
+ *  - CRITICAL FIX: Get PIN token BEFORE building headers in all commands
+ *    This ensures that if getPinToken triggers re-auth, the fresh token is used
+ *  - Fixed: setChargeLimits, ClimFavoritesStart, ClimManual, ClimStop,
+ *    StartCharge, StopCharge, LockUnlockHelper, getLocation
+ *
+ *  Changes in v1.2.5:
+ *  - Fixed authResponse to properly handle error 7602 (token deleted)
+ *  - Fixed refreshToken to fall back to full auth when needed
+ *  - Added getChargeLimits() call in getVehicleStatus()
+ *  - Better error propagation - stop operations when auth fails
+ *  - Fixed getPinToken to handle errors properly
+ *  - Added token validation before API calls
  *
  *  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
  *  files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
@@ -30,10 +36,10 @@ import groovy.json.JsonOutput
 import groovy.transform.Field
 import java.security.MessageDigest
 
-static String appVersion()   { return "1.2.4" }
+static String appVersion()   { return "1.2.6" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
-    state.version = "1.2.4"
+    state.version = "1.2.6"
     state.transactionId = ""
 }
 
@@ -84,7 +90,6 @@ def generateDeviceId() {
     if (!state.deviceId) {
         def seed = "${location.hub.id}-${user_name}-hubitat"
         def hash = MessageDigest.getInstance("MD5").digest(seed.bytes)
-        // Convertir en hexadécimal au lieu de Base64 (compatible Hubitat)
         state.deviceId = hash.encodeHex().toString().take(64)
     }
     return state.deviceId
@@ -94,6 +99,11 @@ def generateDeviceId() {
 def rateLimitDelay() {
     def delay = 1000 + new Random().nextInt(2000) // 1-3 seconds random
     pauseExecution(delay)
+}
+
+// NEW: Check if we have a valid token
+def hasValidToken() {
+    return (state.access_token != null && state.access_token != "")
 }
 
 preferences {
@@ -212,10 +222,19 @@ def debugPage() {
             input 'refreshToken', 'button', title: 'Force Token Refresh', submitOnChange: true
         }
         section {
+            input 'forceLogin', 'button', title: 'Force Full Login', submitOnChange: true
+        }
+        section {
             input 'initialize', 'button', title: 'initialize', submitOnChange: true
         }
         section {
             input 'clearCookies', 'button', title: 'Clear Cookies & Session', submitOnChange: true
+        }
+        section {
+            paragraph "<strong>Current Status:</strong>"
+            paragraph "Access Token: ${state.access_token ? 'Present' : 'Missing'}"
+            paragraph "Refresh Token: ${state.refresh_token ? 'Present' : 'Missing'}"
+            paragraph "Session Cookies: ${state.sessionCookies ? 'Present' : 'Missing'}"
         }
     }
 }
@@ -223,12 +242,18 @@ def debugPage() {
 def appButtonHandler(btn) {
     switch (btn) {
         case 'discover':
-            authorize()
-            rateLimitDelay()
-            getVehicles()
+            if (authorize()) {
+                rateLimitDelay()
+                getVehicles()
+            }
             break
         case 'refreshToken':
             refreshToken()
+            break
+        case 'forceLogin':
+            state.access_token = null
+            state.refresh_token = null
+            authorize()
             break
         case 'initialize':
             initialize()
@@ -236,7 +261,9 @@ def appButtonHandler(btn) {
         case 'clearCookies':
             state.sessionCookies = null
             state.deviceId = null
-            log("Cookies and session cleared", "info")
+            state.access_token = null
+            state.refresh_token = null
+            log("Cookies, tokens and session cleared", "info")
             break
         default:
             log("Invalid Button In Handler", "error")
@@ -274,7 +301,8 @@ void initialize() {
     }
 }
 
-void authorize() {
+// MODIFIED: Now returns Boolean to indicate success/failure
+Boolean authorize() {
     log("authorize called - Using Cloudflare bypass", "info")
     
     unschedule()
@@ -325,10 +353,11 @@ void authorize() {
     ]  
     
     log("Attempting login with Cloudflare bypass...", "info")
+    Boolean success = false
    
     try {
         httpPost(params) { response ->
-            authResponse(response)
+            success = authResponse(response)
 
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
@@ -338,19 +367,24 @@ void authorize() {
         }
     } catch (groovyx.net.http.HttpResponseException e) {
         if (e.getStatusCode() == 429) {
-            log("RATE LIMIT ERROR: You are being rate limited by Cloudflare. Wait 15-30 minutes before retrying.", "error")
-            log("TIP: Try accessing https://mybluelink.ca/login in a browser first to establish cookies.", "warn")
+            log("RATE LIMIT ERROR (429): You are being rate limited by Cloudflare. Wait 15-30 minutes before retrying.", "error")
+            state.lastRateLimitTime = now()
         } else if (e.getStatusCode() == 403) {
-            log("ACCESS DENIED: Cloudflare is blocking your requests. You may need to clear cookies or wait.", "error")
+            log("ACCESS DENIED (403): Cloudflare is blocking your requests. You may need to clear cookies or wait.", "error")
         } else {
             log("Login failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
         }
+        success = false
     } catch (java.net.SocketTimeoutException e) {
         log("Connection timeout - Cloudflare may be challenging the request", "error")
+        success = false
     }
+    
+    return success
 }
 
-void refreshToken(Boolean refresh=false) {
+// MODIFIED: Now returns Boolean to indicate success/failure
+Boolean refreshToken(Boolean isRetry=false) {
     log("refreshToken called", "trace")
 
     if (state.refresh_token != null) {       
@@ -375,10 +409,11 @@ void refreshToken(Boolean refresh=false) {
         ]  
 
         rateLimitDelay()
+        Boolean success = false
 
         try {
             httpPost(params) { response ->
-                authResponse(response)
+                success = authResponse(response)
 
                 def cookies = response.headers['Set-Cookie']
                 if (cookies) {
@@ -386,26 +421,47 @@ void refreshToken(Boolean refresh=false) {
                     log.debug "✓ Cookies refreshed"
                 }
             }
+            
+            // If refresh failed (token deleted), try full auth
+            if (!success && !isRetry) {
+                log("Token refresh failed, attempting full re-authentication", "warn")
+                pauseExecution(3000)
+                return authorize()
+            }
+            
+            return success
+            
         } catch (java.net.SocketTimeoutException e) {
-            if (!refresh) {
+            if (!isRetry) {
                 log("Socket timeout, will retry refresh token", "info")
                 pauseExecution(5000)
-                refreshToken(true)
+                return refreshToken(true)
             }
+            return false
         } catch (groovyx.net.http.HttpResponseException e) {
             if (e.getStatusCode() == 429) {
-                log("RATE LIMITED during token refresh - waiting before retry", "warn")
-                pauseExecution(10000)
+                log("RATE LIMITED during token refresh - wait 15-30 minutes", "error")
+                state.lastRateLimitTime = now()
+                return false
             } else {
                 log("Token refresh failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
+                // Try full auth on failure
+                if (!isRetry) {
+                    log("Attempting full re-authentication", "warn")
+                    pauseExecution(3000)
+                    return authorize()
+                }
+                return false
             }
         }
     } else {
-        log("Failed to refresh token, refresh token null.", "error")
+        log("No refresh token available, attempting full authentication.", "warn")
+        return authorize()
     }
 }
 
-def authResponse(response) {
+// MODIFIED: Now returns Boolean to indicate success/failure
+Boolean authResponse(response) {
     log("authResponse called", "info")
 
     unschedule()
@@ -420,29 +476,64 @@ def authResponse(response) {
         log.debug "✓ Auth cookies saved"
     }
 
+    // FIXED: Check for errors FIRST before processing success
     if (reJson.containsKey('error')) {
         log("reJsonerror: ${reJson.error}", "debug")
         if (reJson.error.containsKey('errorCode')) {
             log("reJsonerrorCode: ${reJson.error.errorCode}", "debug")
+            
+            // Token deleted - clear tokens and indicate failure
+            if (reJson.error.errorCode == "7602") {
+                log("Token deleted (7602) - need full re-authentication", "warn")
+                state.access_token = null
+                state.refresh_token = null
+                return false
+            }
+            
+            // Login incorrect
+            if (reJson.error.errorCode == "7404") {
+                log("Login incorrect (7404) - check username/password", "error")
+                state.access_token = null
+                state.refresh_token = null
+                return false
+            }
         }
+        return false
     }
 
-    if (reCode == 200) {
+    // FIXED: Check that result and token exist before accessing
+    if (reCode == 200 && reJson?.result?.token?.accessToken) {
         state.access_token = reJson.result.token.accessToken
         state.refresh_token = reJson.result.token.refreshToken
         Integer expireTime = reJson.result.token.expireIn - 180
-        log("✓ Token refreshed successfully, Next in: ${expireTime} sec", "info")
+        log("✓ Token obtained successfully, Next refresh in: ${expireTime} sec", "info")
 
         if (stay_logged_in) {
             runIn(expireTime, refreshToken)
         }
+        return true
     } else {
-        log("LoginResponse Failed HTTP Request Status: ${reCode}", "error")
+        log("LoginResponse Failed - No token in response. HTTP Status: ${reCode}", "error")
+        return false
     }
+}
+
+// Helper to ensure we have valid auth before API calls
+Boolean ensureAuthenticated() {
+    if (!hasValidToken()) {
+        log("No valid token, attempting authentication", "info")
+        return authorize()
+    }
+    return true
 }
 
 def getVehicles(Boolean retry=false) {
     log("getVehicles called", "trace")
+
+    if (!ensureAuthenticated()) {
+        log("Cannot get vehicles - authentication failed", "error")
+        return
+    }
 
     rateLimitDelay()
 
@@ -478,22 +569,37 @@ def getVehicles(Boolean retry=false) {
                 log.debug "✓ Cookies saved (getVehicles)"
             }
         }
+        
+        // Check for API errors in response
+        if (reJson.containsKey('error')) {
+            log("getVehicles API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "error")
+            if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404") && !retry) {
+                log('Token issue, will refresh and retry.', 'warn')
+                if (authorize()) {
+                    pauseExecution(3000)
+                    getVehicles(true)
+                }
+            }
+            return
+        }
+        
     } catch (groovyx.net.http.HttpResponseException e) {
         if (e.getStatusCode() == 429) {
             log("RATE LIMITED: Wait 15-30 minutes before trying again", "error")
             return
         } else if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()
-            pauseExecution(3000)
-            getVehicles(true)
+            if (refreshToken()) {
+                pauseExecution(3000)
+                getVehicles(true)
+            }
         } else {
             log("getVehicles failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
         }
         return
     }
 
-    if (reJson.result.vehicles == null) {
+    if (reJson.result?.vehicles == null) {
         log("No enrolled vehicles found.", "info")
     } else {
         reJson.result.vehicles.each { vehicle ->
@@ -523,8 +629,21 @@ def getVehicles(Boolean retry=false) {
 void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh = false, Boolean retry=false)
 {
     log("getVehicleStatus() called with forceRefresh=${forceRefresh}", "trace")
-    if( !stay_logged_in ) {
-        authorize()
+    
+    if (!stay_logged_in) {
+        if (!authorize()) {
+            log("Cannot get vehicle status - authentication failed", "error")
+            return
+        }
+    }
+    
+    // Verify we have a valid token
+    if (!hasValidToken()) {
+        log("No valid token, attempting to authenticate", "warn")
+        if (!authorize()) {
+            log("Authentication failed, cannot get vehicle status", "error")
+            return
+        }
     }
     
     rateLimitDelay()
@@ -621,11 +740,30 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
             
             log.debug "reCode: ${reCode}"
             
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("getVehicleStatus API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404") && !retry) {
+                    log('Token issue, will refresh and retry.', 'warn')
+                    if (authorize()) {
+                        pauseExecution(3000)
+                        getVehicleStatus(device, forceRefresh, true)
+                    }
+                }
+                return
+            }
+            
             if (reJson?.result?.status?.evStatus) {
                 log.info "✓ evStatus found in cached data"
                 def lastUpdate = reJson.result.status.lastStatusDate
                 log.info "Data age: ${lastUpdate}"
             }
+        }
+        
+        // Only process if we have valid data
+        if (!reJson?.result?.status) {
+            log("No status data in response", "warn")
+            return
         }
         
         sendEvent(device, [name: 'Engine', value: reJson.result.status.engine ? 'On' : 'Off'])
@@ -691,27 +829,42 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
         else if (e.getStatusCode() == 401 && !retry)
         {
             log.warn 'Authorization token expired, will refresh and retry.'
-            refreshToken()
-            pauseExecution(2000)
-            getVehicleStatus(device, forceRefresh, true)
+            if (refreshToken()) {
+                pauseExecution(2000)
+                getVehicleStatus(device, forceRefresh, true)
+            }
             return
         }
         log.error "getVehicleStatus failed -- ${e.getLocalizedMessage()}: ${e.response?.data}"
+        return
     }
     catch (Exception e)
     {
         log.error "Unexpected error: ${e.message}"
+        return
     }
     
-    pauseExecution(2000)
-    try { getNextService(device) } catch (Exception e) { log.warn "getNextService failed: ${e.message}" }
-    
-    pauseExecution(2000)
-    try { ClimFavoritesDisplay(device) } catch (Exception e) { log.warn "ClimFavoritesDisplay failed: ${e.message}" }
+    // Call additional data fetchers - but only if we have valid token
+    if (hasValidToken()) {
+        pauseExecution(2000)
+        try { getNextService(device) } catch (Exception e) { log.warn "getNextService failed: ${e.message}" }
+        
+        pauseExecution(2000)
+        try { ClimFavoritesDisplay(device) } catch (Exception e) { log.warn "ClimFavoritesDisplay failed: ${e.message}" }
+        
+        // ADDED: Call getChargeLimits to get AC/DC levels
+        pauseExecution(2000)
+        try { getChargeLimits(device) } catch (Exception e) { log.warn "getChargeLimits failed: ${e.message}" }
+    }
 }
 
 void getNextService(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean refresh=false) {
     log("getNextService() called", "trace")
+
+    if (!hasValidToken()) {
+        log("getNextService: No valid token", "warn")
+        return
+    }
 
     rateLimitDelay()
 
@@ -745,14 +898,15 @@ void getNextService(com.hubitat.app.DeviceWrapper device, Boolean retry=false, B
             }
         }
 
-        // Vérifier s'il y a une erreur dans la réponse
+        // Check for API errors
         if (reJson.containsKey('error')) {
             log("getNextService API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
-            if (reJson.error.errorCode == "7602" && !retry) {
-                log('Access token deleted, will refresh and retry.', 'warn')
-                refreshToken()
-                pauseExecution(2000)
-                getNextService(device, true, refresh)
+            if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404") && !retry) {
+                log('Token issue, will refresh and retry.', 'warn')
+                if (authorize()) {
+                    pauseExecution(2000)
+                    getNextService(device, true, refresh)
+                }
             }
             return
         }
@@ -768,8 +922,9 @@ void getNextService(com.hubitat.app.DeviceWrapper device, Boolean retry=false, B
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()
-            getNextService(device, true, refresh)
+            if (refreshToken()) {
+                getNextService(device, true, refresh)
+            }
         }
         log("getNextService(device) failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -779,18 +934,38 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
     log("getLocation() called", "trace")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            log("Cannot get location - authentication failed", "error")
+            sendEventHelper(device, "Location", false)
+            return
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            sendEventHelper(device, "Location", false)
+            return
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot get location - failed to get PIN token", "error")
+        sendEventHelper(device, "Location", false)
+        return
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + "fndmcr"
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
     headers.put('vehicleId', state.vehicleId)
     headers.put('offset', '-5')
-    headers.put('pAuth', getPinToken(device))
+    headers.put('pAuth', pAuth)
     headers.put('Deviceid', generateDeviceId())
 
     if (state.sessionCookies) {
@@ -819,12 +994,17 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("getLocation API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                sendEventHelper(device, "Location", false)
+                return
+            }
 
-            if (reCode == 200) {
+            if (reCode == 200 && reJson.result?.coord != null) {
                 log("getLocation successful.","info")
                 sendEventHelper(device, "Location", true)
-            }
-            if (reJson.result.coord != null) {
                 sendEvent(device, [name: 'locLatitude', value: reJson.result.coord.lat])
                 sendEvent(device, [name: 'locLongitude', value: reJson.result.coord.lon])
                 sendEvent(device, [name: 'locAltitude', value: reJson.result.coord.alt])
@@ -840,8 +1020,9 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()
-            getLocation(device, refresh, true)
+            if (refreshToken()) {
+                getLocation(device, refresh, true)
+            }
             return
         }
         log("getLocation failed -- ${e.getLocalizedMessage()}: Status: ${e.response.getStatus()}", "error")
@@ -849,8 +1030,14 @@ void getLocation(com.hubitat.app.DeviceWrapper device, Boolean refresh=false, Bo
     }
 }
 
+// MODIFIED: Now returns null on failure instead of potentially invalid pAuth
 def getPinToken(com.hubitat.app.DeviceWrapper device, Boolean retry=false) {
     log("getPinToken() called", "trace")
+
+    if (!hasValidToken()) {
+        log("getPinToken: No valid access token", "warn")
+        return null
+    }
 
     rateLimitDelay()
 
@@ -887,11 +1074,29 @@ def getPinToken(com.hubitat.app.DeviceWrapper device, Boolean retry=false) {
             if (cookies) {
                 state.sessionCookies = cookies
             }
-
-            if (reCode == 200) {
-                log("getPinToken successful.","info")
-            }
         }
+        
+        // FIXED: Check for errors in response
+        if (reJson.containsKey('error')) {
+            log("getPinToken API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+            if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404") && !retry) {
+                log('Token issue in getPinToken, will refresh and retry.', 'warn')
+                if (authorize()) {
+                    pauseExecution(2000)
+                    return getPinToken(device, true)
+                }
+            }
+            return null
+        }
+        
+        if (reJson?.result?.pAuth) {
+            log("getPinToken successful.","info")
+            return reJson.result.pAuth
+        } else {
+            log("getPinToken: No pAuth in response", "warn")
+            return null
+        }
+        
     } catch (groovyx.net.http.HttpResponseException e) {
         if (e.getStatusCode() == 429) {
             log.error "Rate limited during getPinToken"
@@ -899,13 +1104,13 @@ def getPinToken(com.hubitat.app.DeviceWrapper device, Boolean retry=false) {
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()
-            return getPinToken(device, true)
+            if (refreshToken()) {
+                return getPinToken(device, true)
+            }
         }
         log("getPinToken failed -- ${e.getLocalizedMessage()}: Status: ${e.response.getStatus()}", "error")
+        return null
     }
-
-    return reJson?.result?.pAuth
 }
 
 void Lock(com.hubitat.app.DeviceWrapper device)
@@ -936,6 +1141,11 @@ void Unlock(com.hubitat.app.DeviceWrapper device)
 
 void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean refresh=false) {
     log("ClimFavoritesDisplay() called", "trace")
+
+    if (!hasValidToken()) {
+        log("ClimFavoritesDisplay: No valid token", "warn")
+        return
+    }
 
     rateLimitDelay()
 
@@ -968,21 +1178,22 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=fa
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors FIRST
+            if (reJson.containsKey('error')) {
+                log("ClimFavoritesDisplay API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404") && !retry) {
+                    log('Token issue, will refresh and retry.', 'warn')
+                    if (authorize()) {
+                        pauseExecution(2000)
+                        ClimFavoritesDisplay(device, true, refresh)
+                    }
+                }
+                return
+            }
 
             if (reCode == 200) {
                 log("ClimFavoritesDisplay successful.","info")
-            }
-            
-            // Vérifier s'il y a une erreur dans la réponse
-            if (reJson.containsKey('error')) {
-                log("ClimFavoritesDisplay API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
-                if (reJson.error.errorCode == "7602" && !retry) {
-                    log('Access token deleted, will refresh and retry.', 'warn')
-                    refreshToken()
-                    pauseExecution(2000)
-                    ClimFavoritesDisplay(device, true, refresh)
-                }
-                return
             }
             
             if (reJson?.result && reJson.result[0] != null) {
@@ -1026,8 +1237,9 @@ void ClimFavoritesDisplay(com.hubitat.app.DeviceWrapper device, Boolean retry=fa
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            ClimFavoritesDisplay(device, true, refresh)
+            if (refreshToken()) {
+                ClimFavoritesDisplay(device, true, refresh)
+            }
         }
         log("ClimFavoritesDisplay failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -1037,17 +1249,36 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
     log("ClimFavoritesStart() called", "trace")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            sendEventHelper(device, "ClimFavoritesStart", false)
+            return
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            sendEventHelper(device, "ClimFavoritesStart", false)
+            return
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot start climate - failed to get PIN token", "error")
+        sendEventHelper(device, "ClimFavoritesStart", false)
+        return
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + "evc/rfon"
     API_Headers.referer = "https://mybluelink.ca/remote/climate"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
     headers.put('vehicleId', state.vehicleId)
-    headers.put('pAuth', getPinToken(device))    
+    headers.put('pAuth', pAuth)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
     headers.put('Deviceid', generateDeviceId())
@@ -1119,6 +1350,13 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("ClimFavoritesStart API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                sendEventHelper(device, "ClimFavoritesStart", false)
+                return
+            }
 
             if (reCode == 200) {
                 log("ClimFavoritesStart successful.","info")
@@ -1135,8 +1373,9 @@ void ClimFavoritesStart(com.hubitat.app.DeviceWrapper device, pcmdFavoriteNbr, B
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            ClimFavoritesStart(device, pcmdFavoriteNbr, true, refresh)
+            if (refreshToken()) {
+                ClimFavoritesStart(device, pcmdFavoriteNbr, true, refresh)
+            }
         }
         log("ClimFavoritesStart failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -1146,17 +1385,36 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
     log("ClimManual() called", "trace")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            sendEventHelper(device, "ClimManual", false)
+            return
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            sendEventHelper(device, "ClimManual", false)
+            return
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot start climate - failed to get PIN token", "error")
+        sendEventHelper(device, "ClimManual", false)
+        return
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + "evc/rfon"
     API_Headers.referer = "https://mybluelink.ca/remote/climate"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
     headers.put('vehicleId', state.vehicleId)
-    headers.put('pAuth', getPinToken(device))    
+    headers.put('pAuth', pAuth)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
     headers.put('Deviceid', generateDeviceId())
@@ -1224,6 +1482,13 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("ClimManual API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                sendEventHelper(device, "ClimManual", false)
+                return
+            }
 
             if (reCode == 200) {
                 log("ClimManual successful.","info")
@@ -1240,8 +1505,9 @@ void ClimManual(com.hubitat.app.DeviceWrapper device, pcmdTemp, pstrCmdDefrost, 
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            ClimManual(device, pcmdTemp, pstrCmdDefrost, pcmdHeating, true, refresh)
+            if (refreshToken()) {
+                ClimManual(device, pcmdTemp, pstrCmdDefrost, pcmdHeating, true, refresh)
+            }
         }
         log("ClimManual failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -1251,17 +1517,36 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
     log("ClimStop() called", "trace")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            sendEventHelper(device, "ClimStop", false)
+            return
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            sendEventHelper(device, "ClimStop", false)
+            return
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot stop climate - failed to get PIN token", "error")
+        sendEventHelper(device, "ClimStop", false)
+        return
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + "evc/rfoff"
     API_Headers.referer = "https://mybluelink.ca/remote/climate"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
     headers.put('vehicleId', state.vehicleId)
-    headers.put('pAuth', getPinToken(device))    
+    headers.put('pAuth', pAuth)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
     headers.put('Deviceid', generateDeviceId())
@@ -1295,6 +1580,13 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("ClimStop API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                sendEventHelper(device, "ClimStop", false)
+                return
+            }
 
             if (reCode == 200) {
                 log("ClimStop successful.","info")
@@ -1311,8 +1603,9 @@ void ClimStop(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boolean
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            ClimStop(device, true, refresh)
+            if (refreshToken()) {
+                ClimStop(device, true, refresh)
+            }
         }
         log("ClimStop failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -1322,17 +1615,36 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
     log("StartCharge() called", "trace")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            sendEventHelper(device, "StartCharge", false)
+            return
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            sendEventHelper(device, "StartCharge", false)
+            return
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot start charge - failed to get PIN token", "error")
+        sendEventHelper(device, "StartCharge", false)
+        return
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + "evc/rcstrt"
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
     headers.put('vehicleId', state.vehicleId)
-    headers.put('pAuth', getPinToken(device))    
+    headers.put('pAuth', pAuth)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
     headers.put('Deviceid', generateDeviceId())
@@ -1366,6 +1678,13 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("StartCharge API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                sendEventHelper(device, "StartCharge", false)
+                return
+            }
 
             if (reCode == 200) {
                 log("StartCharge successful.","info")
@@ -1382,8 +1701,9 @@ void StartCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Bool
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            StartCharge(device, true, refresh)
+            if (refreshToken()) {
+                StartCharge(device, true, refresh)
+            }
         }
         log("StartCharge failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -1393,17 +1713,36 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
     log("StopCharge() called", "trace")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            sendEventHelper(device, "StopCharge", false)
+            return
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            sendEventHelper(device, "StopCharge", false)
+            return
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot stop charge - failed to get PIN token", "error")
+        sendEventHelper(device, "StopCharge", false)
+        return
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + "evc/rcstp"
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
     headers.put('vehicleId', state.vehicleId)
-    headers.put('pAuth', getPinToken(device))    
+    headers.put('pAuth', pAuth)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
     headers.put('Deviceid', generateDeviceId())
@@ -1437,6 +1776,13 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("StopCharge API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                sendEventHelper(device, "StopCharge", false)
+                return
+            }
 
             if (reCode == 200) {
                 log("StopCharge successful.","info")
@@ -1453,8 +1799,9 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            StopCharge(device, true, refresh)
+            if (refreshToken()) {
+                StopCharge(device, true, refresh)
+            }
         }
         log("StopCharge failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -1463,6 +1810,11 @@ void StopCharge(com.hubitat.app.DeviceWrapper device, Boolean retry=false, Boole
 void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
 {
     log("getChargeLimits() called", "trace")
+
+    if (!hasValidToken()) {
+        log("getChargeLimits: No valid token", "warn")
+        return
+    }
 
     rateLimitDelay()
 
@@ -1496,8 +1848,8 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
         httpPost(params) { response ->
             def reCode = response.getStatus()
             reJson = response.getData()
-            log.debug "getChargeLimits reCode: ${reCode}"
-            log.debug "getChargeLimits reJson: ${reJson}"
+            log("getChargeLimits reCode: ${reCode}", "debug")
+            log("getChargeLimits reJson: ${reJson}", "debug")
 
             def cookies = response.headers['Set-Cookie']
             if (cookies) {
@@ -1505,12 +1857,25 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
             }
         }
         
+        // Check for API errors
+        if (reJson.containsKey('error')) {
+            log("getChargeLimits API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+            if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404") && !retry) {
+                log('Token issue, will refresh and retry.', 'warn')
+                if (authorize()) {
+                    pauseExecution(2000)
+                    getChargeLimits(device, true)
+                }
+            }
+            return
+        }
+        
         if (reJson?.result && reJson.result.size() >= 2) {
             sendEvent(device, [name: 'DCLevel', value: reJson.result[0].level])
             sendEvent(device, [name: 'ACLevel', value: reJson.result[1].level])
             sendEvent(device, [name: 'ACRange', value: reJson.result[1].dte.rangeByFuel.totalAvailableRange.value])
             
-            log.debug "Charge limits updated"
+            log("✓ Charge limits updated - DC: ${reJson.result[0].level}%, AC: ${reJson.result[1].level}%", "info")
         }
     }
     catch (groovyx.net.http.HttpResponseException e)
@@ -1522,9 +1887,10 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
         if (e.getStatusCode() == 401 && !retry)
         {
             log.warn 'Authorization token expired, will refresh and retry.'
-            refreshToken()
-            pauseExecution(2000)
-            getChargeLimits(device, true)
+            if (refreshToken()) {
+                pauseExecution(2000)
+                getChargeLimits(device, true)
+            }
             return
         }
         log.error "getChargeLimits failed -- ${e.getLocalizedMessage()}: ${e.response?.data}"
@@ -1536,19 +1902,37 @@ void getChargeLimits(com.hubitat.app.DeviceWrapper device, Boolean retry=false)
 }
 
 void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLevel, Boolean retry=false, Boolean refresh=false) {
-    log("setChargeLimits() called", "trace")
+    log("setChargeLimits() called - AC: ${pcmdACLevel}%, DC: ${pcmdDCLevel}%", "info")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            log("Cannot set charge limits - authentication failed", "error")
+            return
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            log("Cannot set charge limits - authentication failed", "error")
+            return
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot set charge limits - failed to get PIN token", "error")
+        return
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + "evc/setsoc"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
     headers.put('vehicleId', state.vehicleId)
-    headers.put('pAuth', getPinToken(device))
+    headers.put('pAuth', pAuth)
     headers.put('offset', '-5')
     headers.put('REFRESH', refresh.toString())
     headers.put('Deviceid', generateDeviceId())
@@ -1590,6 +1974,22 @@ void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLe
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            // Check for API errors
+            if (reJson.containsKey('error')) {
+                log("setChargeLimits API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                return
+            }
+            
+            if (reCode == 200 && reJson?.result) {
+                log("✓ setChargeLimits successful", "info")
+                // Update the device attributes immediately
+                if (reJson.result.size() >= 2) {
+                    sendEvent(device, [name: 'DCLevel', value: reJson.result[0].level])
+                    sendEvent(device, [name: 'ACLevel', value: reJson.result[1].level])
+                    log("✓ Charge limits set - DC: ${reJson.result[0].level}%, AC: ${reJson.result[1].level}%", "info")
+                }
+            }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
         if (e.getStatusCode() == 429) {
@@ -1598,8 +1998,9 @@ void setChargeLimits(com.hubitat.app.DeviceWrapper device, pcmdACLevel, pcmdDCLe
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()          
-            setChargeLimits(device, pcmdACLevel, pcmdDCLevel, true, refresh)
+            if (refreshToken()) {
+                setChargeLimits(device, pcmdACLevel, pcmdDCLevel, true, refresh)
+            }
         }
         log("setChargeLimits failed -- ${e.getLocalizedMessage()}: ${e.response.data}", "error")
     }
@@ -1621,17 +2022,33 @@ private Boolean LockUnlockHelper(com.hubitat.app.DeviceWrapper device, String ur
     log("LockUnlockHelper() called", "trace")
 
     if (!stay_logged_in) {
-        authorize()
+        if (!authorize()) {
+            return false
+        }
+    }
+    
+    if (!hasValidToken()) {
+        if (!authorize()) {
+            return false
+        }
     }
 
     rateLimitDelay()
+    
+    // IMPORTANT: Get PIN token FIRST - it may trigger re-authentication
+    def pAuth = getPinToken(device)
+    if (!pAuth) {
+        log("Cannot lock/unlock - failed to get PIN token", "error")
+        return false
+    }
 
+    // Build headers AFTER getPinToken (which may have refreshed the access token)
     def uri = API_URL + urlSuffix
     API_Headers.referer = "https://mybluelink.ca/login"
     def headers = API_Headers
-    headers.put('accessToken', state.access_token)
-    headers.put('vehicleId', state.vehicleId)  
-    headers.put('pAuth', getPinToken(device))
+    headers.put('accessToken', state.access_token)  // Uses fresh token if re-auth happened
+    headers.put('vehicleId', state.vehicleId)
+    headers.put('pAuth', pAuth)
     headers.put('offset', '-5')
     headers.put('Deviceid', generateDeviceId())
 
@@ -1660,6 +2077,13 @@ private Boolean LockUnlockHelper(com.hubitat.app.DeviceWrapper device, String ur
             if (cookies) {
                 state.sessionCookies = cookies
             }
+            
+            def reJson = response.getData()
+            // Check for API errors
+            if (reJson?.containsKey('error')) {
+                log("LockUnlock API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
+                return false
+            }
         }
     } catch (groovyx.net.http.HttpResponseException e) {
         if (e.getStatusCode() == 429) {
@@ -1668,10 +2092,12 @@ private Boolean LockUnlockHelper(com.hubitat.app.DeviceWrapper device, String ur
         }
         if (e.getStatusCode() == 401 && !retry) {
             log('Authorization token expired, will refresh and retry.', 'warn')
-            refreshToken()
-            return LockUnlockHelper(device, urlSuffix, true, refresh)
+            if (refreshToken()) {
+                return LockUnlockHelper(device, urlSuffix, true, refresh)
+            }
         }
         log("LockUnlockHelper failed -- ${e.getLocalizedMessage()}: Status: ${e.response.getStatus()}", "error")
+        return false
     }
     return (reCode == 200)
 }
