@@ -4,7 +4,7 @@
   "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
   "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044/59",
   "author": "Jean Bilodeau",
-  "version": "1.2.4",
+  "version": "1.2.6",
   "minimumHEVersion": "0.0",
   "dateReleased": "2026-01-03",
   "apps": [
@@ -28,6 +28,7 @@
     }
   ]
 }
+
 
 
 
