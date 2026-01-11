@@ -1,12 +1,12 @@
 {
   "packageName": "Canadian Hyundai Bluelink",
-  "releaseNotes": "v 1.2.6  Many fixes, need to read the app comments",
-  "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
-  "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044/59",
   "author": "Jean Bilodeau",
   "version": "1.2.6",
-  "minimumHEVersion": "0.0",
+  "minimumHEVersion": "2.0.0",
   "dateReleased": "2026-01-11",
+  "releaseNotes": "v1.2.6 - Critical fix: Token refresh order corrected in all commands. v1.2.5 - Fixed token management and error handling, added getChargeLimits to refresh.",
+  "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
+  "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044",
   "apps": [
     {
       "id": "c31202b6-e8bf-4696-a1e1-f9332a3b84ea",
@@ -15,7 +15,8 @@
       "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Apps/BluelinkApp.groovy",
       "required": true,
       "oauth": false,
-      "primary": true
+      "primary": true,
+      "version": "1.2.6"
     }
   ],
   "drivers": [
@@ -24,13 +25,8 @@
       "name": "Canadian Hyundai Bluelink Driver",
       "namespace": "jbilodea",
       "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Drivers/BluelinkDriver.groovy",
-      "required": true
+      "required": true,
+      "version": "1.2.2"
     }
   ]
 }
-
-
-
-
-
-
