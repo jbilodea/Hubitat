@@ -1,6 +1,6 @@
 {
   "packageName": "Canadian Hyundai Bluelink",
-  "releaseNotes": "v 1.2.4  Trying to deal with cloudflare",
+  "releaseNotes": "v 1.2.6  Many fixes, need to read the app comments",
   "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
   "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044/59",
   "author": "Jean Bilodeau",
@@ -28,6 +28,7 @@
     }
   ]
 }
+
 
 
 
