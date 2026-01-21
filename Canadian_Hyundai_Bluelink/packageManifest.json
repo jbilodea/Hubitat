@@ -1,10 +1,10 @@
 {
   "packageName": "Canadian Hyundai Bluelink",
   "author": "Jean Bilodeau",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "minimumHEVersion": "2.0.0",
-  "dateReleased": "2026-01-11",
-  "releaseNotes": "v1.2.6 - Critical fix: Token refresh order corrected in all commands. v1.2.5 - Fixed token management and error handling, added getChargeLimits to refresh.",
+  "dateReleased": "2026-01-18",
+  "releaseNotes": "v1.2.7 - Added exponential backoff strategy for Cloudflare rate limits, Cooldown periods: 30min -> 1h -> 2h -> 4h -> 8h -> 16h -> 24h (max)",
   "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
   "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044",
   "apps": [
@@ -16,7 +16,7 @@
       "required": true,
       "oauth": false,
       "primary": true,
-      "version": "1.2.6"
+      "version": "1.2.7"
     }
   ],
   "drivers": [
@@ -26,7 +26,8 @@
       "namespace": "jbilodea",
       "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Drivers/BluelinkDriver.groovy",
       "required": true,
-      "version": "1.2.2"
+      "version": "1.2.7"
     }
   ]
 }
+
