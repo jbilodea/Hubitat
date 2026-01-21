@@ -1,9 +1,14 @@
 /**
- *  Hyundai Bluelink Application - CLOUDFLARE FIX v1.2.7
+ *  Hyundai Bluelink Application
  *
  *  Author:         Tim Yuhl & Jean Bilodeau for Canadian version
- *  Modified:       2026-01-16 - Added exponential backoff for Cloudflare rate limits
+ *  Modified:       2026-01-21 - Added exponential backoff for Cloudflare rate limits
  *
+ *  Changes in v1.2.8:
+ *  - On error 7406 automatically reconnect
+ *
+ *  Changes in v1.2.7:
+ *  - Added exponential backoff strategy for Cloudflare rate limits
  *  Changes in v1.2.7:
  *  - Added exponential backoff strategy for Cloudflare rate limits
  *    Cooldown periods: 30min -> 1h -> 2h -> 4h -> 8h -> 16h -> 24h (max)
@@ -40,7 +45,7 @@ import groovy.json.JsonSlurper
 import groovy.json.JsonOutput
 import groovy.transform.Field
 import java.security.MessageDigest
-static String appVersion()   { return "1.2.7" }
+static String appVersion()   { return "1.2.8" }
 def setVersion(){
     state.name = "Hyundai Bluelink Application"
     state.version = "1.2.7"
