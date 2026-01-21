@@ -764,8 +764,11 @@ void getVehicleStatus(com.hubitat.app.DeviceWrapper device, Boolean forceRefresh
             // Check for API errors
             if (reJson.containsKey('error')) {
                 log("getVehicleStatus API error: ${reJson.error.errorDesc} (${reJson.error.errorCode})", "warn")
-                if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404" || reJson.error.errorCode == "7606") && !retry) {                
-                    log('Token issue, will refresh and retry.', 'warn')
+                if ((reJson.error.errorCode == "7602" || reJson.error.errorCode == "7404" || reJson.error.errorCode == "7606" || reJson.error.errorCode == "7406") && !retry) {
+                    log('Token issue (error ${reJson.error.errorCode}), will force full re-authentication and retry.', 'warn')
+                    // Clear tokens to force full re-auth
+                    state.access_token = null
+                    state.refresh_token = null
                     if (authorize()) {
                         pauseExecution(3000)
                         getVehicleStatus(device, forceRefresh, true)
