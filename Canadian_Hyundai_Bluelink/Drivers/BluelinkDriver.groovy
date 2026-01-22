@@ -23,10 +23,10 @@
  *  12/29/25 - Minor improvements for Cloudflare compatibility (v1.2.2)
  */
 
-String appVersion()   { return "1.2.7" }
+String appVersion()   { return "1.2.8" }
 def setVersion(){
     state.name = "Hyundai Bluelink Driver"
-    state.version = "1.2.7"
+    state.version = "1.2.8"
 }
 
 metadata {
