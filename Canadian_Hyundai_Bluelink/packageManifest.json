@@ -26,10 +26,11 @@
       "namespace": "jbilodea",
       "location": "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Drivers/BluelinkDriver.groovy",
       "required": true,
-      "version": "1.2.7"
+      "version": "1.2.8"
     }
   ]
 }
+
 
 
 
