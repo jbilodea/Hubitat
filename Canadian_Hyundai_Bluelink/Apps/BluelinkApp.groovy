@@ -84,7 +84,7 @@ definition(
         namespace: "jbilodea",
         author: "Jean Bilodeau",
         description: "Application for Canadian Hyundai Bluelink web service access.",
-        importUrl:"https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/Apps/BluelinkApp.groovy",
+        importUrl:"https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Apps/BluelinkApp.groovy",
         category: "Convenience",
         iconUrl: "",
         iconX2Url: ""
