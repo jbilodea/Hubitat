@@ -34,7 +34,7 @@ metadata {
             name: "Canadian Hyundai Bluelink Driver",
             namespace: "jbilodea",
             description: "Driver for accessing Canadian Hyundai Bluelink web services",
-            importUrl: "https://raw.githubusercontent.com/jbilodea/Hubitat/main/Canadian_Hyundai_Bluelink/Drivers/BluelinkDriver.groovy",
+            importUrl: "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/Drivers/BluelinkDriver.groovy",
             author: "Jean Bilodeau")
             {
                 capability "Initialize"
