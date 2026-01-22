@@ -4,7 +4,7 @@
   "version": "1.2.8",
   "minimumHEVersion": "2.0.0",
   "dateReleased": "2026-01-21",
-  "releaseNotes": "v1.2.8 - Automatically reconnect on error 7406
+  "releaseNotes": "v1.2.8 - Automatically reconnect on error 7406"
   "documentationLink": "https://github.com/jbilodea/Hubitat/blob/main/Canadian_Hyundai_Bluelink/README.md",
   "communityLink": "https://community.hubitat.com/t/release-hyundai-bluelink-remote-start-lock-support-beta/79044",
   "apps": [
@@ -30,5 +30,6 @@
     }
   ]
 }
+
 
 
